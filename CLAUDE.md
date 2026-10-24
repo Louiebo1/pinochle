@@ -76,4 +76,6 @@ pagat.com's three-player points game with every score divided by 10:
   pause → rejoin, host drop → takeover + Paused panel → rejoin. Test table deleted.
 
 ## Deploy
-Not published yet.
+GitHub Pages from `main` (repo Louiebo1/pinochle, public) → https://louiebo1.github.io/pinochle/
+(2026-10-24). `git push`; Pages rebuilds in about a minute. Lauren (lboczek7) is a
+collaborator here and on the other card game repos.
