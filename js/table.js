@@ -45,6 +45,14 @@ export function applyMove(state, move) {
         G.apply(g, move, move.seat);
         break;
       case 'continue': G.markContinued(g, move.seat); break;
+      case 'meldDone':                  // A person is done looking at the meld.
+        if (g.phase !== 'meld' || move.seat === g.bidder || !g.humanSeats.includes(move.seat)) return false;
+        G.markMeldDone(g, move.seat);
+        break;
+      case 'startPlay':                 // The 30 seconds after the first Done are up.
+        if (g.phase !== 'meld' || move.hand !== g.handNumber) return false;
+        G.startPlay(g);
+        break;
       case 'deal':                      // The 30 seconds after the first Next Hand are up.
         if (g.phase !== 'handOver' || move.hand !== g.handNumber) return false;
         G.nextHand(g);
@@ -71,12 +79,16 @@ export function nextHostStep(state) {
   const g = state.game;
   const isBot = (s) => state.seats[s].kind === 'bot';
   switch (g.phase) {
-    case 'bidding': case 'widow': case 'trump': case 'meld': case 'playing': {
+    case 'meld':
+      // A bot bidder decides (after a moment to see the meld); then wait for the people.
+      if (isBot(g.bidder) && !(g.meldDone || []).includes(g.bidder)) return { delay: PACE.meldHold, seat: g.bidder, style: g.botStyles[g.bidder] || 'steady' };
+      if (g.meldDeadline && (g.meldDone || []).includes(g.bidder)) return { delay: Math.max(0, g.meldDeadline - Date.now()), move: { type: 'startPlay', hand: g.handNumber } };
+      return null;
+    case 'bidding': case 'widow': case 'trump': case 'playing': {
       const s = g.turn;
       if (!isBot(s)) return null;
       let delay = PACE.bot;
       if (g.phase === 'widow') delay = widowReveal();
-      else if (g.phase === 'meld') delay = PACE.meldHold;
       else if (g.phase === 'playing' && !g.trick.length && g.lastTrick.length) delay = trickLinger() + PACE.bot / 2;
       return { delay, seat: s, style: g.botStyles[s] || 'steady' };
     }

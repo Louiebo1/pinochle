@@ -223,9 +223,17 @@ input:focus { outline: 2px solid var(--gold); }
 .handrow .card.picked { transform: translateY(calc(var(--cw) * -0.32)); box-shadow: 0 0 0 3px var(--gold), 0 0 10px var(--gold); }
 .handrow .card.dim { filter: brightness(0.62) saturate(0.7); }
 .handrow .card.from-kitty::after { content: ''; position: absolute; left: 20%; right: 20%; top: -6px; height: 4px; border-radius: 2px; background: var(--gold); }
+/* Burying: meld cards for the trump picked sit raised; cards picked to bury glow gold in
+   place (red if they're meld). */
+.handrow .card.meld { transform: translateY(calc(var(--cw) * -0.32)); }
+.handrow .card.bury-pick { box-shadow: 0 0 0 3px var(--gold), 0 0 12px var(--gold); }
+.handrow .card.meld.bury-pick { box-shadow: 0 0 0 3px #ff6b5b, 0 0 12px #ff6b5b; }
+.bury .meld-loss { color: #ffb0a6; font-weight: 700; text-align: center; }
+.bury .meld-key { font-size: 14px; opacity: 0.85; text-align: center; }
 .card.hinted { box-shadow: 0 0 0 3px var(--gold), 0 1px 3px #0007; }
 @media (hover: hover) {
   .handrow .card.choosable:hover { transform: translateY(calc(var(--cw) * -0.12)); }
+  .handrow .card.choosable.meld:hover { transform: translateY(calc(var(--cw) * -0.38)); }
   .handrow .card.playable:hover { transform: translateY(calc(var(--cw) * -0.2)); }
 }
 

@@ -5,7 +5,7 @@
 
 import * as G from './game.js';
 import {
-  SYMBOL, SUIT_NAME, SUITS, card, suitOf, rankLabel, label, isRedSuit, power, isCounter, meldOf,
+  SYMBOL, SUIT_NAME, SUITS, card, suitOf, rankLabel, label, isRedSuit, power, isCounter, meldOf, meldCardsOf,
   SPADES, HEARTS, DIAMONDS, ACE, TEN, KING, QUEEN, JACK,
 } from './cards.js';
 import { STYLES } from './bot.js';
@@ -728,7 +728,8 @@ function statusText(g, revealing) {
     case 'trump':
       return whose ? `${whose} is naming trump…` : 'Name trump';
     case 'meld': {
-      if (whose) return `${whose} is deciding: play it or throw it in…`;
+      if (g.bidder !== me) return (g.meldDone || []).includes(g.bidder) ? `${nameOf(g.bidder)} will play it — look over the meld, then tap Done` : `${nameOf(g.bidder)} is deciding: play it or throw it in…`;
+      if ((g.meldDone || []).includes(me)) return 'Playing it — once everyone has seen the meld';
       const need = g.highBid - g.melds[me].total;
       return need <= 0 ? 'Your meld makes your bid!' : `You need ${need} more from the tricks (25 in the play)`;
     }
@@ -759,10 +760,20 @@ function controls(g, revealing) {
   }
   if (mine && g.phase === 'widow' && !revealing) box.appendChild(buryControls(g));
   if (mine && g.phase === 'trump') box.appendChild(trumpButtons(g.hands[ui.me], (t) => perform({ type: 'trump', trump: t }), null));
-  if (mine && g.phase === 'meld') {
-    const r = el('div', 'row');
-    r.appendChild(button('Throw In', '', () => confirmThen('Throw the Hand In?', `You lose your bid (${g.highBid}); the others score their meld.`, 'Throw In', () => perform({ type: 'concede' }))));
-    r.appendChild(button('Play It', 'primary', () => perform({ type: 'play' })));
+  if (g.phase === 'meld' && !waitingOnHost()) {
+    // Everyone confirms they've seen the meld: the bidder by Play It, the others by Done.
+    const r = el('div', 'row'), done = (g.meldDone || []).includes(ui.me);
+    if (mine && !done) {
+      r.appendChild(button('Throw In', '', () => confirmThen('Throw the Hand In?', `You lose your bid (${g.highBid}); the others score their meld.`, 'Throw In', () => perform({ type: 'concede' }))));
+      r.appendChild(button('Play It', 'primary', () => perform({ type: 'play' })));
+    } else if (ui.me !== g.bidder && !done) {
+      r.appendChild(button('Done', 'primary', () => host.send({ type: 'meldDone', seat: ui.me })));
+    } else {
+      const waiting = G.meldWaiting(g).filter((s) => s !== ui.me).map(nameOf);
+      const left = g.meldDeadline ? Math.max(0, Math.ceil((g.meldDeadline - Date.now()) / 1000)) : null;
+      r.appendChild(el('div', 'pill', `⏳ Waiting for ${waiting.join(', ') || 'the others'}…${left !== null ? ' ' + left : ''}`));
+      if (left !== null) redrawAt(Date.now() + 1000);
+    }
     box.appendChild(r);
   }
   return box;
@@ -810,14 +821,29 @@ function trumpButtons(hand, onPick, picked) {
 function buryControls(g) {
   const pool = g.hands[ui.me].concat(g.widow);
   const keep = ui.selected.size === G.WIDOW ? pool.filter((c) => !ui.selected.has(c)) : pool;
-  if (ui.trumpPick === null) ui.trumpPick = SUITS.reduce((a, b) => (meldIn(pool, b).total > meldIn(pool, a).total ? b : a));
+  const t = buryTrump(g);
   const box = el('div', 'bury');
-  box.appendChild(trumpButtons(keep, (t) => { ui.trumpPick = t; render(); }, ui.trumpPick));
+  box.appendChild(trumpButtons(keep, (s) => { ui.trumpPick = s; render(); }, t));
+  // Burying meld is allowed, but say what it costs.
+  const before = meldIn(pool, t).total, after = meldIn(pool.filter((c) => !ui.selected.has(c)), t).total;
+  if (after < before) {
+    const lost = [...ui.selected].filter((c) => meldCards(pool, t).has(c));
+    box.appendChild(el('div', 'meld-loss', `Burying ${lost.map(cardText).join(' ') || 'these'} drops your meld from ${before} to ${after}`));
+  } else box.appendChild(el('div', 'meld-key', `The raised cards meld in ${suitHTML(t)} — bury the others to keep it all`));
   const go = button(`Bury 3 · Trump ${SYMBOL[ui.trumpPick]}`, 'primary', bury);
   go.disabled = ui.selected.size !== G.WIDOW;
   box.appendChild(go);
   return box;
 }
+
+/** The trump being picked while burying: the one with the most meld until I choose. */
+function buryTrump(g) {
+  const pool = g.hands[ui.me].concat(g.widow);
+  if (ui.trumpPick === null) ui.trumpPick = SUITS.reduce((a, b) => (meldIn(pool, b).total > meldIn(pool, a).total ? b : a));
+  return ui.trumpPick;
+}
+
+const meldCards = (pool, t) => meldCardsOf(pool, t, state?.game || {});
 
 function meLine(g) {
   const me = ui.me;
@@ -865,7 +891,8 @@ function handRow(g, revealing) {
   const row = el('div', 'handrow');
   const burying = isMyTurn(g) && g.phase === 'widow' && !revealing;
   const fromWidow = new Set(burying ? g.widow : []);
-  const trumpShown = g.trump ?? (burying ? ui.trumpPick : null);
+  const trumpShown = g.trump ?? (burying ? buryTrump(g) : null);
+  const melders = burying ? meldCards(handCards(g), trumpShown) : new Set();
   const hand = defaultOrder(handCards(g), trumpShown, settings.highFirst);
   const legal = new Set(G.legalPlays(g, me));
   const myTurn = isMyTurn(g) && g.phase === 'playing';
@@ -877,7 +904,9 @@ function handRow(g, revealing) {
   row.style.setProperty('--overlap', `${step - cardW}px`);
   for (const c of hand) {
     const e = cardEl(c);
-    if (burying) e.classList.add(ui.selected.has(c) ? 'picked' : 'choosable');
+    if (burying) e.classList.add('choosable');
+    if (burying && ui.selected.has(c)) e.classList.add('bury-pick');
+    if (melders.has(c)) e.classList.add('meld');
     if (fromWidow.has(c)) e.classList.add('from-kitty');
     if (myTurn && c === ui.pending) e.classList.add('picked');
     else if (myTurn && legal.has(c)) e.classList.add('playable');

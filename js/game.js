@@ -109,8 +109,8 @@ export function apply(g, move, seat, random = Math.random) {
     if (seat !== g.bidder || !SUITS.includes(move.trump)) illegal();
     nameTrump(g, move.trump);
   } else if (g.phase === 'meld' && move.type === 'play') {
-    g.phase = 'playing';
-    g.turn = g.bidder;
+    if (seat !== g.bidder) illegal();
+    markMeldDone(g, seat);
   } else if (g.phase === 'meld' && move.type === 'concede') {
     concede(g);
   } else if (g.phase === 'playing' && move.type === 'card') {
@@ -142,6 +142,31 @@ function nameTrump(g, trump) {
   g.melds = g.hands.map((h) => meldOf(h, trump, g));
   g.phase = 'meld';
   g.turn = g.bidder;
+  g.meldDone = [];
+  g.meldDeadline = null;
+}
+
+/** The meld stays up until every person is done looking (Louie, 2026-10-25): the bidder by
+ *  choosing Play It (or Throw In), the others with Done. Once one person is done, the rest
+ *  get 30 seconds (`meldDeadline`; the host then sends `startPlay`). Bots don't wait. */
+export function markMeldDone(g, seat, now = Date.now()) {
+  if (g.phase !== 'meld') illegal();
+  const done = (g.meldDone || []).slice();
+  if (!done.includes(seat)) done.push(seat);
+  g.meldDone = done;
+  if (done.includes(g.bidder) && g.humanSeats.every((s) => done.includes(s))) { startPlay(g); return; }
+  if (g.humanSeats.includes(seat) && !g.meldDeadline) g.meldDeadline = now + CONTINUE_WAIT;
+}
+
+/** Who the meld is still waiting on: people not done, and the bidder until they choose. */
+export const meldWaiting = (g) => [0, 1, 2].filter((s) => !(g.meldDone || []).includes(s) && (s === g.bidder || g.humanSeats.includes(s)));
+
+/** The bidder chose to play it and the 30 seconds are up (or everyone's done): play starts. */
+export function startPlay(g) {
+  if (g.phase !== 'meld' || !(g.meldDone || []).includes(g.bidder)) illegal();
+  g.phase = 'playing';
+  g.turn = g.bidder;
+  g.meldDeadline = null;
 }
 
 // MARK: Tricks

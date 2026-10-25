@@ -28,6 +28,10 @@ pagat.com's three-player points game with every score divided by 10:
     "taken a counter"); off, the bidder. `result.buriedTo`; the result shows the cards.
   Fields `g.doubleMarriage/roundhouse/buriedToLast` (old saves: off); `meldOf(hand, trump, g)`.
 - Bidder may throw in after the meld: −bid, others score their meld.
+- The meld stays up until every person is done (Louie 2026-10-25): the bidder by Play It, the
+  others with Done (`meldDone` move); once one person is done the rest get 30 s
+  (`g.meldDeadline`, then the host's `startPlay`). Bots don't wait; a bot bidder decides
+  after `PACE.meldHold`. `G.markMeldDone`, `G.meldWaiting`.
 - Play: follow suit and ALWAYS beat the winning card if you can ("always kill" — Louie);
   can't follow → must trump, over a trump if you can; else anything. First of two
   identical cards wins. A/10/K = 1, last trick 1: 25.

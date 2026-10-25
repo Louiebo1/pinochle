@@ -1,7 +1,7 @@
 // The rules, the meld, and whole games of the bots through the table code.
 //   /System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc -m tests/engine.test.js
 import * as G from '../js/game.js';
-import { card, SPADES, HEARTS, CLUBS, DIAMONDS, ACE, TEN, KING, QUEEN, JACK, NINE, FULL_DECK, meldOf, isCounter } from '../js/cards.js';
+import { card, SPADES, HEARTS, CLUBS, DIAMONDS, ACE, TEN, KING, QUEEN, JACK, NINE, FULL_DECK, meldOf, meldCardsOf, isCounter } from '../js/cards.js';
 import { Bot, losingPlay } from '../js/bot.js';
 import { newTableState, applyMove } from '../js/table.js';
 
@@ -10,6 +10,7 @@ function check(ok, what) { checks++; if (!ok) { failures++; print('FAIL ' + what
 const throws = (f) => { try { f(); return false; } catch (e) { return e instanceof G.IllegalMove; } };
 const S = (r, k = 0) => card(SPADES, r, k), H = (r, k = 0) => card(HEARTS, r, k), C = (r, k = 0) => card(CLUBS, r, k), D = (r, k = 0) => card(DIAMONDS, r, k);
 const now = () => Date.now();
+const same = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
 
 // The deck.
 check(FULL_DECK.length === 48 && new Set(FULL_DECK).size === 48, '48 cards');
@@ -49,6 +50,14 @@ check(m([S(QUEEN), D(JACK), S(KING)], HEARTS) === 6, 'Q♠ in pinochle and marri
   const r = meldOf([H(ACE), H(TEN), H(JACK), ...kq2(H)], HEARTS, { doubleMarriage: true });
   check(r.faces.length === 7, 'run + double marriage shows 7 cards');
   check(G.newGame().doubleMarriage === true && G.newGame({ doubleMarriage: false }).doubleMarriage === false, 'double marriage is the default');
+}
+// Burying: which cards meld (burying one alone would lose meld).
+{
+  const pool = [H(KING), H(QUEEN), S(QUEEN), D(JACK), C(NINE), C(NINE, 1), S(ACE), S(ACE, 1)];
+  const mc = meldCardsOf(pool, HEARTS);
+  check(same([...mc], [H(KING), H(QUEEN), S(QUEEN), D(JACK)]), 'meld cards: royal marriage and pinochle, not the plain cards');
+  check(meldCardsOf(pool, CLUBS).size === 6 && meldCardsOf(pool, CLUBS).has(C(NINE)) && !mc.has(C(NINE)), 'the 9s meld only as the dix in trump');
+  check(meldCardsOf([C(NINE), C(NINE, 1)], CLUBS).size === 2, 'both dix meld');
 }
 // Roundhouse 24 beside a run (house rule, on by default).
 {
@@ -108,6 +117,35 @@ for (const kitty of [true, false]) {
   G.apply(g, { type: 'trump', trump: SPADES }, 1);
   check(g.phase === 'meld' && g.hands[1].length === 16, 'no kitty: 16 cards');
 }
+// The meld stays up until every person is done (the bidder by Play It); 30 s after the first.
+{
+  const toMeld = (humanSeats, bidder) => {
+    const g = G.newGame({ kitty: false, dealer: (bidder + 2) % 3 });
+    g.humanSeats = humanSeats;
+    G.apply(g, { type: 'bid', amount: 15 }, bidder); G.apply(g, { type: 'pass' }, (bidder + 1) % 3); G.apply(g, { type: 'pass' }, (bidder + 2) % 3);
+    G.apply(g, { type: 'trump', trump: SPADES }, bidder);
+    return g;
+  };
+  let g = toMeld([0], 0);
+  G.apply(g, { type: 'play' }, 0);
+  check(g.phase === 'playing' && g.turn === 0, 'alone vs the computer: Play It starts play');
+  g = toMeld([0, 1], 0);
+  check(throws(() => G.apply(g, { type: 'play' }, 1)), 'only the bidder plays it');
+  G.apply(g, { type: 'play' }, 0);
+  check(g.phase === 'meld' && g.meldDeadline > Date.now() && same(G.meldWaiting(g), [1]), 'bidder chose: waiting on the other person, 30 s');
+  G.markMeldDone(g, 1);
+  check(g.phase === 'playing', 'everyone done: play starts');
+  g = toMeld([0, 1], 2);
+  G.apply(g, { type: 'play' }, 2);
+  check(g.phase === 'meld' && !g.meldDeadline && same(G.meldWaiting(g), [0, 1]), 'a bot bidder waits for the people');
+  G.markMeldDone(g, 0);
+  check(g.meldDeadline && same(G.meldWaiting(g), [1]), 'first Done starts the 30 s');
+  G.startPlay(g);
+  check(g.phase === 'playing' && g.turn === 2, 'time up: play starts');
+  g = toMeld([0, 1], 0);
+  G.markMeldDone(g, 1);
+  check(throws(() => G.startPlay(g)), 'no play until the bidder chooses');
+}
 
 /** A hand in play: `bidder` bid `bid` with `trump`; `turn` leads. */
 function playing(hands, trump, bidder, turn, extra = {}) {
@@ -115,7 +153,6 @@ function playing(hands, trump, bidder, turn, extra = {}) {
   Object.assign(g, { hands, widow: [], trump, bidder, highBid: 15, phase: 'playing', turn, melds: hands.map((h) => meldOf(h, trump)) }, extra);
   return g;
 }
-const same = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
 
 // Following: beat the winning card if you can.
 {

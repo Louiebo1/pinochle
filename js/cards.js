@@ -41,6 +41,12 @@ export function shuffled(deck = FULL_DECK, random = Math.random) {
   return d;
 }
 
+/** The cards in `pool` that meld with `trump`: burying any one of them alone loses meld. */
+export function meldCardsOf(pool, trump, rules = {}) {
+  const full = meldOf(pool, trump, rules).total;
+  return new Set(pool.filter((c) => meldOf(pool.filter((x) => x !== c), trump, rules).total < full));
+}
+
 // MARK: Meld (the scores divided by 10; doubles score the big bonuses — Louie, 2026-10-24)
 
 const AROUND = [[ACE, 'Aces', 10], [KING, 'Kings', 8], [QUEEN, 'Queens', 6], [JACK, 'Jacks', 4]];
