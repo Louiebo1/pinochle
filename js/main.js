@@ -16,7 +16,7 @@ import { play as playSound, sound, unlockSound } from './sounds.js';
 
 const app = document.getElementById('app');
 // The page's options as it was opened (the address changes to ?t=CODE once at a table).
-// For checking the page: ?name=X, ?play, ?autoplay, ?fast, ?nokitty, ?newtable=CODE&startafter=N.
+// For checking the page: ?name=X, ?play, ?autoplay, ?fast, ?nokitty, ?nodouble, ?newtable=CODE&startafter=N.
 const params = new URLSearchParams(location.search);
 
 // MARK: Remembered on this device
@@ -28,7 +28,7 @@ function store(key, value) {
   try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
-const settings = Object.assign({ name: '', back: 'red', highFirst: true, largePrint: false, sounds: true, hints: false, kitty: true }, stored('pn.settings', {}));
+const settings = Object.assign({ name: '', back: 'red', highFirst: true, largePrint: false, sounds: true, hints: false, kitty: true, doubleMarriage: true }, stored('pn.settings', {}));
 function saveSettings() {
   store('pn.settings', settings);
   document.body.classList.toggle('large-print', settings.largePrint);
@@ -130,17 +130,24 @@ document.addEventListener('keydown', (e) => {
 // Browsers only allow sound after a tap.
 document.addEventListener('pointerdown', unlockSound);
 
-/** With a kitty / No kitty: a two-way switch. */
-function kittySwitch(value, onChange, disabled = false) {
+/** A two-way switch: [[value, text], [value, text]]. */
+function twoWay(options, value, onChange, disabled = false) {
   const box = el('div', 'switch');
-  for (const [v, text] of [[true, 'With a Kitty'], [false, 'No Kitty']]) {
+  for (const [v, text] of options) {
     const b = button(text, v === value ? 'on' : '', () => onChange(v));
     b.disabled = disabled;
     box.appendChild(b);
   }
   return box;
 }
+/** With a kitty / No kitty. */
+const kittySwitch = (value, onChange, disabled) => twoWay([[true, 'With a Kitty'], [false, 'No Kitty']], value, onChange, disabled);
 const kittyNote = (kitty) => (kitty ? '15 cards each and 3 in the kitty' : '16 cards each, no kitty');
+/** Double marriage (both K Q of a suit) 30, or just two marriages. */
+const marriageSwitch = (value, onChange, disabled) => twoWay([[true, 'Double Marriage 30'], [false, 'Double Marriage 4/8']], value, onChange, disabled);
+const marriageNote = (dm) => (dm ? 'both K Q of a suit score 30, trump or not' : 'both K Q of a suit are just two marriages: 4, or 8 in trump');
+/** The meld in a hand, by the rule of the game being shown. */
+const meldIn = (hand, t) => meldOf(hand, t, state?.game?.doubleMarriage);
 
 // MARK: Start screen
 
@@ -218,6 +225,7 @@ function showLobby() {
   const saved = savedGame.get();
   if (saved) lobby.appendChild(button(`Continue Game · ${saved.game.scores.join('–')}`, 'big-button primary', () => playComputer(saved)));
   lobby.appendChild(kittySwitch(settings.kitty, (v) => { settings.kitty = v; saveSettings(); showLobby(); }));
+  lobby.appendChild(marriageSwitch(settings.doubleMarriage, (v) => { settings.doubleMarriage = v; saveSettings(); showLobby(); }));
   lobby.appendChild(button(saved ? 'New Game vs the Computer' : 'Play the Computer', 'big-button', () => {
     if (saved) confirmThen('New Game?', 'The game you have going will be lost.', 'New Game', () => playComputer());
     else playComputer();
@@ -257,7 +265,7 @@ function playComputer(saved = null) {
     const names = shuffledList(BOT_NAMES.filter((n) => n !== settings.name));
     const seats = [{ kind: 'person', name: settings.name || 'You' }, ...[0, 1].map((i) => ({ kind: 'bot', name: names[i] }))];
     if (params.has('autoplay')) seats[0].kind = 'bot';     // Testing: bots in every seat.
-    s = newTableState(seats, params.has('nokitty') ? false : settings.kitty);
+    s = newTableState(seats, params.has('nokitty') ? false : settings.kitty, params.has('nodouble') ? false : settings.doubleMarriage);
   }
   ui.me = 0;
   resetUI();
@@ -277,7 +285,7 @@ function showFriends() {
   const lobby = el('div', 'lobby');
   lobby.appendChild(el('h1', '', 'Pinochle'));
   lobby.appendChild(el('div', 'tag', 'Play with friends'));
-  lobby.appendChild(button('Start a Table', 'big-button primary', () => withTable(OnlineTable.create(myName(), onTableUpdate, null, settings.kitty))));
+  lobby.appendChild(button('Start a Table', 'big-button primary', () => withTable(OnlineTable.create(myName(), onTableUpdate, null, settings.kitty, settings.doubleMarriage))));
   lobby.appendChild(el('div', 'note', 'or join with a code'));
   const row = el('div', 'row');
   const input = el('input', 'code');
@@ -366,10 +374,13 @@ function waitingRoom() {
   if (t.isHost) {
     lobby.appendChild(kittySwitch(t.kitty, (v) => t.setKitty(v)));
     lobby.appendChild(el('div', 'note', kittyNote(t.kitty)));
+    lobby.appendChild(marriageSwitch(t.doubleMarriage, (v) => t.setDoubleMarriage(v)));
+    lobby.appendChild(el('div', 'note', marriageNote(t.doubleMarriage)));
     const open = t.seats.filter((s) => s.kind === 'open').length;
     lobby.appendChild(button(open ? `Start — bots take ${open} seat${open === 1 ? '' : 's'}` : 'Start the Game', 'big-button primary', () => t.start()));
   } else {
     lobby.appendChild(el('div', 'note', `${t.kitty ? 'With a kitty' : 'No kitty'}: ${kittyNote(t.kitty)}.`));
+    lobby.appendChild(el('div', 'note', `Double marriage ${t.doubleMarriage ? '30' : '4/8'}: ${marriageNote(t.doubleMarriage)}.`));
     const hostSeat = t.seats.find((s) => s.uid === t.meta?.hostUid);
     lobby.appendChild(el('div', 'note', `Waiting for ${hostSeat ? esc(hostSeat.name) : 'the host'} to start…`));
   }
@@ -725,9 +736,9 @@ function controls(g, revealing) {
 
 /** What my cards meld in each suit as trump. */
 function meldPreview(hand, title) {
-  const best = Math.max(...SUITS.map((t) => meldOf(hand, t).total));
+  const best = Math.max(...SUITS.map((t) => meldIn(hand, t).total));
   return el('div', 'meld-preview', `<span class="faint">${title}</span> ${SUITS.map((t) => {
-    const v = meldOf(hand, t).total;
+    const v = meldIn(hand, t).total;
     return `<span class="${v === best && v > 0 ? 'best' : ''}">${suitHTML(t)} ${v}</span>`;
   }).join(' ')}`);
 }
@@ -752,7 +763,7 @@ function bidControls(g) {
 function trumpButtons(hand, onPick, picked) {
   const row = el('div', 'trumps');
   for (const t of SUITS) {
-    const v = meldOf(hand, t).total;
+    const v = meldIn(hand, t).total;
     const b = el('button', 'trump' + (isRedSuit(t) ? ' red' : '') + (picked === t ? ' on' : ''), `<b>${SYMBOL[t]}</b><small>meld ${v}</small>`);
     b.setAttribute('aria-label', `${SUIT_NAME[t]}, meld ${v}`);
     b.onclick = () => onPick(t);
@@ -765,7 +776,7 @@ function trumpButtons(hand, onPick, picked) {
 function buryControls(g) {
   const pool = g.hands[ui.me].concat(g.widow);
   const keep = ui.selected.size === G.WIDOW ? pool.filter((c) => !ui.selected.has(c)) : pool;
-  if (ui.trumpPick === null) ui.trumpPick = SUITS.reduce((a, b) => (meldOf(pool, b).total > meldOf(pool, a).total ? b : a));
+  if (ui.trumpPick === null) ui.trumpPick = SUITS.reduce((a, b) => (meldIn(pool, b).total > meldIn(pool, a).total ? b : a));
   const box = el('div', 'bury');
   box.appendChild(trumpButtons(keep, (t) => { ui.trumpPick = t; render(); }, ui.trumpPick));
   const go = button(`Bury 3 · Trump ${SYMBOL[ui.trumpPick]}`, 'primary', bury);
@@ -1019,7 +1030,7 @@ function sheetPanel(g) {
   const close = () => { ui.showSheet = false; render(); };
   const body = el('div');
   body.appendChild(scoreRow(g));
-  body.appendChild(el('div', 'note', `First to ${G.TARGET} wins · ${g.kitty ? 'with a kitty' : 'no kitty'}`));
+  body.appendChild(el('div', 'note', `First to ${G.TARGET} wins · ${g.kitty ? 'with a kitty' : 'no kitty'} · double marriage ${g.doubleMarriage ? 30 : '4/8'}`));
   const box = el('div', 'sheet-box');
   box.appendChild(scoreSheet(g));
   body.appendChild(box);
@@ -1051,10 +1062,15 @@ function showMenu() {
     ['How to Play', '', showRules],
     ['New Game', '', () => {
       const body = el('div');
-      let kitty = g.kitty;
-      const draw = () => { body.innerHTML = ''; body.appendChild(el('p', '', online ? 'This starts the game over for everyone at the table.' : 'This game’s scores will be lost.')); body.appendChild(kittySwitch(kitty, (v) => { kitty = v; draw(); })); };
+      let kitty = g.kitty, doubleMarriage = g.doubleMarriage ?? true;
+      const draw = () => {
+        body.innerHTML = '';
+        body.appendChild(el('p', '', online ? 'This starts the game over for everyone at the table.' : 'This game’s scores will be lost.'));
+        body.appendChild(kittySwitch(kitty, (v) => { kitty = v; draw(); }));
+        body.appendChild(marriageSwitch(doubleMarriage, (v) => { doubleMarriage = v; draw(); }));
+      };
       draw();
-      popup('New Game?', body, [['Cancel', ''], ['New Game', 'primary', () => { if (!online) { settings.kitty = kitty; saveSettings(); } host.send({ type: 'newGame', kitty }); }]]);
+      popup('New Game?', body, [['Cancel', ''], ['New Game', 'primary', () => { if (!online) { Object.assign(settings, { kitty, doubleMarriage }); saveSettings(); } host.send({ type: 'newGame', kitty, doubleMarriage }); }]]);
     }],
     ['Leave', '', () => {
       if (online && state.game.phase !== 'gameOver') confirmThen('Leave the Table?', 'The game waits for you (or the host lets a bot play). Come back with Back to Table on the start screen.', 'Leave', leaveTable);
@@ -1119,7 +1135,7 @@ function showRules() {
     <p><b>Three players, each for themselves.</b> 48 cards: two each of A 10 K Q J 9 in every suit. The 10 ranks just below the ace. <b>With a kitty</b>, 15 cards each and 3 face down; <b>no kitty</b>, 16 each.</p>
     <p><b>Bidding</b> starts left of the dealer: 15 or more, raising by 1. Once you pass you're out. When two have passed, the third has the bid. If all three pass, the next dealer deals.</p>
     <p><b>The kitty</b> is turned up for everyone. The bid winner takes it, buries any 3 (their counters count for the bidder; they can't be melded) and names trump. With no kitty, the bid winner just names trump.</p>
-    <p><b>Meld</b> — everyone shows theirs. Run (A 10 K Q J of trump) 15 · royal marriage (K Q of trump) 4 · marriage 2 · dix (9 of trump) 1 · pinochle (Q♠ J♦) 4 · aces around 10 · kings 8 · queens 6 · jacks 4. Doubles: run 150, pinochle 30, aces 100, kings 80, queens 60, jacks 40. A card can count once in each kind of meld (a king in a marriage and in kings around).</p>
+    <p><b>Meld</b> — everyone shows theirs. Run (A 10 K Q J of trump) 15 · royal marriage (K Q of trump) 4 · marriage 2 · dix (9 of trump) 1 · pinochle (Q♠ J♦) 4 · aces around 10 · kings 8 · queens 6 · jacks 4. Doubles: run 150, pinochle 30, aces 100, kings 80, queens 60, jacks 40. <b>Double marriage 30</b> (the usual game): both K Q of a suit score 30, trump or not, even beside a run; with <b>double marriage 4/8</b> they're just two marriages. A card can count once in each kind of meld (a king in a marriage and in kings around).</p>
     <p><b>Throwing in.</b> After the meld the bidder may throw the hand in: they lose the bid, and the others score their meld.</p>
     <p><b>Play.</b> The bidder leads. Follow suit, and beat the winning card if you can. Out of the suit, you must trump — over a trump already played if you can. Of two identical cards, the first played wins. A, 10 and K are worth 1 each, and the last trick 1: 25 in all.</p>
     <p><b>Scoring.</b> The bidder needs meld + counters to reach the bid: then they score them all, or else they lose the bid. The others score their meld + counters — but only if they took a counter. First to 150 wins; if two get there on the same hand, the bidder wins if they're one of them.</p>`);
@@ -1135,7 +1151,7 @@ if (params.get('name')) { settings.name = params.get('name').slice(0, 16); saveS
 if (params.has('fast')) Object.assign(PACE, { bot: 20, trickPause: 30, trickSweep: 20, widowCard: 10, widowHold: 20, meldHold: 40, resultHold: 30, autoNext: 60 });
 const tableCode = params.get('t') || params.get('newtable');
 if (tableCode && onlineAvailable()) {
-  const go = () => (params.get('newtable') ? withTable(OnlineTable.create(myName(), onTableUpdate, tableCode, !params.has('nokitty'))) : joinTable(tableCode));
+  const go = () => (params.get('newtable') ? withTable(OnlineTable.create(myName(), onTableUpdate, tableCode, !params.has('nokitty'), !params.has('nodouble'))) : joinTable(tableCode));
   // Someone opening a shared link for the first time: their name before their seat.
   if (settings.name) go(); else askName(go);
 } else if (params.has('play') || params.has('autoplay')) playComputer();

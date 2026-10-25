@@ -30,10 +30,10 @@ export class IllegalMove extends Error {}
 const illegal = () => { throw new IllegalMove('illegal move'); };
 const next = (seat) => (seat + 1) % PLAYERS;
 
-/** A new game, with or without a kitty. `deck` is the first deal's order. */
-export function newGame({ kitty = true, dealer = Math.floor(Math.random() * PLAYERS), deck = shuffled() } = {}) {
+/** A new game, with or without a kitty; double marriage 30 or not. `deck` is the first deal's order. */
+export function newGame({ kitty = true, doubleMarriage = true, dealer = Math.floor(Math.random() * PLAYERS), deck = shuffled() } = {}) {
   const g = {
-    kitty, scores: [0, 0, 0], dealer, handNumber: 0, phase: 'bidding', turn: 0,
+    kitty, doubleMarriage, scores: [0, 0, 0], dealer, handNumber: 0, phase: 'bidding', turn: 0,
     hands: [[], [], []], widow: [], revealedWidow: [], buried: [],
     calls: [], passed: [], highBid: null, bidder: null, trump: null, redeals: 0,
     melds: null, trick: [], played: [], lastTrick: [], lastTrickWinner: null,
@@ -138,7 +138,7 @@ function advanceBidding(g, seat) {
 
 function nameTrump(g, trump) {
   g.trump = trump;
-  g.melds = g.hands.map((h) => meldOf(h, trump));
+  g.melds = g.hands.map((h) => meldOf(h, trump, g.doubleMarriage));
   g.phase = 'meld';
   g.turn = g.bidder;
 }

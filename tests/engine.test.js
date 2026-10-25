@@ -37,6 +37,19 @@ check(m([S(QUEEN), D(JACK), S(KING)], HEARTS) === 6, 'Q♠ in pinochle and marri
   const r = meldOf([S(QUEEN), D(JACK), S(KING), H(QUEEN), C(QUEEN), D(QUEEN)], HEARTS);
   check(r.total === 4 + 2 + 6 && r.faces.length === 6, 'shown cards counted once: ' + JSON.stringify(r));
 }
+// Double marriage 30 (the default game): both K Q of a suit, trump or not, even beside a run.
+{
+  const dm = (hand, trump) => meldOf(hand, trump, true).total;
+  const kq2 = (f) => [f(KING), f(QUEEN), f(KING, 1), f(QUEEN, 1)];
+  check(dm(kq2(C), SPADES) === 30 && dm(kq2(C), CLUBS) === 30, 'double marriage 30 in or out of trump');
+  check(dm([C(KING), C(QUEEN)], CLUBS) === 4 && dm([C(KING), C(QUEEN), C(KING, 1)], SPADES) === 2, 'single marriages unchanged');
+  check(dm([H(ACE), H(TEN), H(JACK), ...kq2(H)], HEARTS) === 45, 'run + double marriage 45');
+  check(dm([H(ACE), H(TEN), H(JACK), H(ACE, 1), H(TEN, 1), H(JACK, 1), ...kq2(H)], HEARTS) === 180, 'double run + double marriage 180');
+  check(dm([...kq2(S), D(JACK)], HEARTS) === 34, 'double marriage ♠ + pinochle 34');
+  const r = meldOf([H(ACE), H(TEN), H(JACK), ...kq2(H)], HEARTS, true);
+  check(r.faces.length === 7, 'run + double marriage shows 7 cards');
+  check(G.newGame().doubleMarriage === true && G.newGame({ doubleMarriage: false }).doubleMarriage === false, 'double marriage is the default');
+}
 
 // The deal.
 for (const kitty of [true, false]) {

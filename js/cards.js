@@ -48,8 +48,10 @@ const AROUND = [[ACE, 'Aces', 10], [KING, 'Kings', 8], [QUEEN, 'Queens', 6], [JA
 /** The meld in `hand` with `trump`: { total, parts: [{ name, points, faces }], faces }.
  *  A card may count once in each kind of meld (runs, marriages and the dix; pinochles;
  *  "around"), so a king can be in a marriage and in kings around. `faces` is every card
- *  shown, as faces, each as many times as it's needed. */
-export function meldOf(hand, trump) {
+ *  shown, as faces, each as many times as it's needed. With `doubleMarriage` (the default
+ *  game; Louie, 2026-10-25), both K Q of a suit score 30, trump or not, and count even
+ *  when a run uses a K Q of them. */
+export function meldOf(hand, trump, doubleMarriage = false) {
   const count = {};
   for (const c of hand) count[face(c)] = (count[face(c)] || 0) + 1;
   const n = (suit, rank) => count[suit * 100 + rank] || 0;
@@ -63,6 +65,10 @@ export function meldOf(hand, trump) {
   if (runs === 2) add('Double run', 150, times(runFaces, 2));
   else if (runs === 1) add('Run', 15, runFaces);
   for (const s of SUITS) {
+    if (doubleMarriage && Math.min(n(s, KING), n(s, QUEEN)) === 2) {
+      add(`Double marriage ${SYMBOL[s]}`, 30, times([s * 100 + KING, s * 100 + QUEEN], 2));
+      continue;
+    }
     const k = Math.min(n(s, KING), n(s, QUEEN)) - (s === trump ? runs : 0);
     if (k <= 0) continue;
     const royal = s === trump;

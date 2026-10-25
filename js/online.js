@@ -1,7 +1,7 @@
 // Playing with friends through Firebase (Louie's free-plan project, shared with Hearts,
 // Cribbage, Gin and 500; the database rules only open /tables). A table lives at
 // /tables/pin-CODE:
-//   meta      { hostUid, epoch, started, created, kitty } — epoch goes up each time the host changes
+//   meta      { hostUid, epoch, started, created, kitty, doubleMarriage } — epoch goes up each time the host changes
 //   seats     [ { kind: 'person' | 'bot' | 'open', name, uid, standIn } ] ×3
 //   state     the whole table state as JSON (written only by the host)
 //   moves     moves people send ({ uid, move }); the host applies and deletes them
@@ -53,12 +53,12 @@ export class OnlineTable {
   }
 
   /** Starts a new table with me in the first seat. */
-  static async create(name, onUpdate, wanted = null, kitty = true) {
+  static async create(name, onUpdate, wanted = null, kitty = true, doubleMarriage = true) {
     const { db, uid, api } = await connect();
     for (let tries = 0; tries < 20; tries++) {
       const code = tries === 0 && wanted ? wanted : newCode();
       const ref = api.ref(db, `tables/${PREFIX}${code}/meta`);
-      const result = await api.runTransaction(ref, (meta) => (meta ? undefined : { hostUid: uid, epoch: 1, started: false, created: Date.now(), kitty }));
+      const result = await api.runTransaction(ref, (meta) => (meta ? undefined : { hostUid: uid, epoch: 1, started: false, created: Date.now(), kitty, doubleMarriage }));
       if (!result.committed) continue;
       const seats = [{ kind: 'person', name, uid }, { kind: 'open' }, { kind: 'open' }];
       await api.set(api.ref(db, `tables/${PREFIX}${code}/seats`), seats);
@@ -97,12 +97,20 @@ export class OnlineTable {
   get mySeat() { return this.seats.findIndex((s) => s && s.uid === fb.uid); }
   get started() { return Boolean(this.meta && this.meta.started); }
   get kitty() { return !this.meta || this.meta.kitty !== false; }
+  get doubleMarriage() { return !this.meta || this.meta.doubleMarriage !== false; }
 
   /** The host picks the game, with or without a kitty, before it starts. */
   setKitty(kitty) {
     if (!this.isHost || this.started) return;
     const { db, api } = fb;
     api.update(api.ref(db, `${this.path}/meta`), { kitty });
+  }
+
+  /** The host picks double marriage 30 or 4/8 before it starts. */
+  setDoubleMarriage(doubleMarriage) {
+    if (!this.isHost || this.started) return;
+    const { db, api } = fb;
+    api.update(api.ref(db, `${this.path}/meta`), { doubleMarriage });
   }
 
   async listen() {
@@ -242,7 +250,7 @@ export class OnlineTable {
     const names = shuffledList(BOT_NAMES.filter((n) => !this.seats.some((s) => s && s.name === n)));
     this.seats = this.seats.map((s) => (s.kind === 'open' ? { kind: 'bot', name: names.pop() } : s));
     this.writeSeats();
-    this.state = newTableState(this.seats.map((s) => ({ kind: s.kind, name: s.name })), this.kitty);
+    this.state = newTableState(this.seats.map((s) => ({ kind: s.kind, name: s.name })), this.kitty, this.doubleMarriage);
     await api.update(api.ref(db, `${this.path}/meta`), { started: true });
     this.publish();
   }
