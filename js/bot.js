@@ -63,11 +63,11 @@ export class Bot {
       let k = 0;
       for (const o of others) { hands[o] = deck.slice(k, k + g.hands[o].length); k += g.hands[o].length; }
       const widow = g.kitty ? deck.slice(k, k + G.WIDOW) : [];
-      const choice = quickChoice(mine.concat(widow), g.kitty, g.doubleMarriage);
+      const choice = quickChoice(mine.concat(widow), g.kitty, g);
       hands[seat] = choice.hand;
       const trial = practiceHand(g, seat, choice.trump, hands, choice.buried, 0);
       playOut(trial);
-      totals.push(trial.melds[seat].total + trial.points[seat] + choice.buried.filter(isCounter).length);
+      totals.push(trial.melds[seat].total + trial.points[seat] + (G.buriedTo(trial) === seat ? choice.buried.filter(isCounter).length : 0));
     }
     totals.sort((a, b) => b - a);
     const confidence = TUNE.confidence !== undefined ? style.confidence + TUNE.confidence : style.confidence;
@@ -90,7 +90,7 @@ export class Bot {
     const unseen = FULL_DECK.filter((c) => !pool18.includes(c));
     const others = [0, 1, 2].filter((s) => s !== seat);
     const options = [];
-    for (const trump of likelyTrumps(pool18, TUNE.buryTrumps || 3, g.doubleMarriage)) for (const buried of buryOptions(pool18, trump, TUNE.buryOptions || 20, TUNE.buryPool || 8, g.doubleMarriage)) options.push({ trump, buried });
+    for (const trump of likelyTrumps(pool18, TUNE.buryTrumps || 3, g)) for (const buried of buryOptions(pool18, trump, TUNE.buryOptions || 20, TUNE.buryPool || 8, g)) options.push({ trump, buried });
     const deals = Array.from({ length: TUNE.burySamples || BURY_SAMPLES }, () => shuffle(unseen, this.random));
     let best = null, top = -Infinity;
     for (const option of options) {
@@ -115,7 +115,7 @@ export class Bot {
     const others = [0, 1, 2].filter((s) => s !== seat);
     const deals = Array.from({ length: BURY_SAMPLES }, () => shuffle(unseen, this.random));
     let best = null, top = -Infinity;
-    for (const trump of likelyTrumps(hand, 3, g.doubleMarriage)) {
+    for (const trump of likelyTrumps(hand, 3, g)) {
       let sum = 0;
       for (const deck of deals) {
         const hands = [[], [], []];
@@ -214,9 +214,9 @@ export function teamed(g, seat) {
 /** A hand in play for the look-ahead: `seat` won the bid at `bid` and named `trump`. */
 function practiceHand(g, seat, trump, hands, buried, bid) {
   const trial = {
-    kitty: g.kitty, doubleMarriage: g.doubleMarriage, scores: [0, 0, 0], dealer: g.dealer, handNumber: 0, phase: 'playing', turn: seat,
+    kitty: g.kitty, doubleMarriage: g.doubleMarriage, roundhouse: g.roundhouse, buriedToLast: g.buriedToLast, scores: [0, 0, 0], dealer: g.dealer, handNumber: 0, phase: 'playing', turn: seat,
     hands, widow: [], revealedWidow: [], buried: buried.slice(), calls: [], passed: [], highBid: bid, bidder: seat, trump,
-    redeals: 0, melds: hands.map((h) => meldOf(h, trump, g.doubleMarriage)), trick: [], played: [], lastTrick: [], lastTrickWinner: null,
+    redeals: 0, melds: hands.map((h) => meldOf(h, trump, g)), trick: [], played: [], lastTrick: [], lastTrickWinner: null,
     points: [0, 0, 0], tookCounter: [false, false, false], voids: [[], [], []], result: null, history: [], winner: null,
     humanSeats: [], botStyles: {}, continued: null, continueDeadline: null,
   };
@@ -224,8 +224,8 @@ function practiceHand(g, seat, trump, hands, buried, bid) {
 }
 
 /** Suits worth trying as trump: the most meld, then the most cards and power. */
-function likelyTrumps(hand, k, dm) {
-  const rate = (t) => meldOf(hand, t, dm).total + trumpStrength(hand, t);
+function likelyTrumps(hand, k, rules) {
+  const rate = (t) => meldOf(hand, t, rules).total + trumpStrength(hand, t);
   return SUITS.slice().sort((a, b) => rate(b) - rate(a)).slice(0, k);
 }
 function trumpStrength(hand, t) {
@@ -234,9 +234,10 @@ function trumpStrength(hand, t) {
 }
 
 /** How much I'd rather keep a card (low: bury it). Meld and trumps stay; aces stay (they
- *  take tricks); a 10 or K without its ace is safest buried (its point is mine then);
+ *  take tricks); a 10 or K without its ace is safest buried (its point is mine then —
+ *  unless the buried cards go to the last trick);
  *  short suits go, to trump in. */
-function keepValue(c, hand, trump, meldFaces) {
+function keepValue(c, hand, trump, meldFaces, toLastTrick = false) {
   if (meldFaces.has(face(c))) return 100;
   const s = suitOf(c), r = rankOf(c);
   if (s === trump) return 60 + power(c);
@@ -244,15 +245,15 @@ function keepValue(c, hand, trump, meldFaces) {
   const aces = suit.filter((x) => rankOf(x) === ACE).length;
   if (r === ACE) return 40;
   let v = power(c) + suit.length * 2;
-  if ((r === TEN || r === KING) && aces === 0) v -= 4;
+  if ((r === TEN || r === KING) && aces === 0) v += toLastTrick ? 2 : -4;
   return v;
 }
 
 /** A few good burials for this trump: the lowest-keep cards, and mixes of the next ones. */
-function buryOptions(hand, trump, k, size = 6, dm = false) {
-  const meld = meldOf(hand, trump, dm);
+function buryOptions(hand, trump, k, size = 6, rules = {}) {
+  const meld = meldOf(hand, trump, rules);
   const meldFaces = new Set(meld.faces);
-  const ranked = hand.map((c) => [keepValue(c, hand, trump, meldFaces), c]).sort((a, b) => a[0] - b[0]).map((e) => e[1]);
+  const ranked = hand.map((c) => [keepValue(c, hand, trump, meldFaces, rules.buriedToLast), c]).sort((a, b) => a[0] - b[0]).map((e) => e[1]);
   const pool = ranked.slice(0, size), out = [], seen = new Set();
   for (let a = 0; a < pool.length; a++) for (let b = a + 1; b < pool.length; b++) for (let c = b + 1; c < pool.length; c++) {
     const pick = [pool[a], pool[b], pool[c]];
@@ -267,10 +268,10 @@ function buryOptions(hand, trump, k, size = 6, dm = false) {
 
 /** The quick way to take the kitty (for bidding): the trump with the most meld and
  *  strength, and the three cards least worth keeping. */
-function quickChoice(hand, kitty, dm) {
-  const trump = likelyTrumps(hand, 1, dm)[0];
+function quickChoice(hand, kitty, rules) {
+  const trump = likelyTrumps(hand, 1, rules)[0];
   if (!kitty) return { trump, hand, buried: [] };
-  const buried = buryOptions(hand, trump, 1, 6, dm)[0];
+  const buried = buryOptions(hand, trump, 1, 6, rules)[0];
   return { trump, hand: hand.filter((c) => !buried.includes(c)), buried };
 }
 

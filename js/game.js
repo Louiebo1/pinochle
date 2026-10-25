@@ -30,10 +30,11 @@ export class IllegalMove extends Error {}
 const illegal = () => { throw new IllegalMove('illegal move'); };
 const next = (seat) => (seat + 1) % PLAYERS;
 
-/** A new game, with or without a kitty; double marriage 30 or not. `deck` is the first deal's order. */
-export function newGame({ kitty = true, doubleMarriage = true, dealer = Math.floor(Math.random() * PLAYERS), deck = shuffled() } = {}) {
+/** A new game, with or without a kitty, and the house rules (see `meldOf`; `buriedToLast`:
+ *  the buried cards' points go to whoever takes the last trick). `deck` is the first deal's order. */
+export function newGame({ kitty = true, doubleMarriage = true, roundhouse = true, buriedToLast = true, dealer = Math.floor(Math.random() * PLAYERS), deck = shuffled() } = {}) {
   const g = {
-    kitty, doubleMarriage, scores: [0, 0, 0], dealer, handNumber: 0, phase: 'bidding', turn: 0,
+    kitty, doubleMarriage, roundhouse, buriedToLast, scores: [0, 0, 0], dealer, handNumber: 0, phase: 'bidding', turn: 0,
     hands: [[], [], []], widow: [], revealedWidow: [], buried: [],
     calls: [], passed: [], highBid: null, bidder: null, trump: null, redeals: 0,
     melds: null, trick: [], played: [], lastTrick: [], lastTrickWinner: null,
@@ -138,7 +139,7 @@ function advanceBidding(g, seat) {
 
 function nameTrump(g, trump) {
   g.trump = trump;
-  g.melds = g.hands.map((h) => meldOf(h, trump, g.doubleMarriage));
+  g.melds = g.hands.map((h) => meldOf(h, trump, g));
   g.phase = 'meld';
   g.turn = g.bidder;
 }
@@ -199,18 +200,22 @@ export const currentWinner = (g) => (g.trick.length ? winningPlay(g.trick, g.tru
 // MARK: Scoring
 
 const buriedPoints = (g) => g.buried.filter(isCounter).length;
+/** Who gets the buried cards' points: the bidder, or (house rule) whoever took the last trick. */
+export const buriedTo = (g) => (g.buriedToLast && g.lastTrickWinner !== null ? g.lastTrickWinner : g.bidder);
 
 function scoreHand(g) {
   const b = g.bidder, meld = g.melds.map((m) => m.total);
-  const counters = g.points.slice();
-  counters[b] += buriedPoints(g);
+  const counters = g.points.slice(), tookCounter = g.tookCounter.slice();
+  const to = buriedTo(g);
+  counters[to] += buriedPoints(g);
+  if (buriedPoints(g)) tookCounter[to] = true;
   const total = meld[b] + counters[b];
   const made = total >= g.highBid;
   const score = [0, 1, 2].map((s) => {
     if (s === b) return made ? total : -g.highBid;
-    return g.tookCounter[s] ? meld[s] + counters[s] : 0;
+    return tookCounter[s] ? meld[s] + counters[s] : 0;
   });
-  finish(g, { bidder: b, bid: g.highBid, trump: g.trump, made, conceded: false, meld, counters, tookCounter: g.tookCounter.slice(), score });
+  finish(g, { bidder: b, bid: g.highBid, trump: g.trump, made, conceded: false, meld, counters, tookCounter, score, buriedTo: g.buried.length ? to : null });
 }
 
 function concede(g) {

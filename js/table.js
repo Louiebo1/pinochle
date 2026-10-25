@@ -22,8 +22,12 @@ export const shuffledList = (list) => list.map((x) => [Math.random(), x]).sort((
 
 /** A fresh table state: the game plus the seats ([{ kind: 'person' | 'bot', name }]).
  *  Each bot is dealt a secret style, revealed when the game ends. */
-export function newTableState(seats, kitty = true, doubleMarriage = true) {
-  const game = G.newGame({ kitty, doubleMarriage });
+/** The house rules, all on unless turned off: { doubleMarriage, roundhouse, buriedToLast }. */
+export const RULES = ['doubleMarriage', 'roundhouse', 'buriedToLast'];
+export const rulesOf = (r = {}) => Object.fromEntries(RULES.map((k) => [k, r[k] !== false]));
+
+export function newTableState(seats, kitty = true, rules = {}) {
+  const game = G.newGame({ kitty, ...rulesOf(rules) });
   const styles = shuffledList(STYLE_NAMES);
   game.humanSeats = peopleSeats({ seats });
   seats.forEach((s, i) => { if (s.kind === 'bot') game.botStyles[i] = styles.pop(); });
@@ -46,7 +50,7 @@ export function applyMove(state, move) {
         G.nextHand(g);
         break;
       case 'newGame': {
-        const fresh = newTableState(state.seats, move.kitty ?? g.kitty, move.doubleMarriage ?? g.doubleMarriage ?? true);
+        const fresh = newTableState(state.seats, move.kitty ?? g.kitty, move.rules ?? rulesOf(g));
         Object.assign(state, fresh, { version: state.version });
         break;
       }

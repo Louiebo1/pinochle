@@ -39,16 +39,28 @@ check(m([S(QUEEN), D(JACK), S(KING)], HEARTS) === 6, 'Q♠ in pinochle and marri
 }
 // Double marriage 30 (the default game): both K Q of a suit, trump or not, even beside a run.
 {
-  const dm = (hand, trump) => meldOf(hand, trump, true).total;
+  const dm = (hand, trump) => meldOf(hand, trump, { doubleMarriage: true }).total;
   const kq2 = (f) => [f(KING), f(QUEEN), f(KING, 1), f(QUEEN, 1)];
   check(dm(kq2(C), SPADES) === 30 && dm(kq2(C), CLUBS) === 30, 'double marriage 30 in or out of trump');
   check(dm([C(KING), C(QUEEN)], CLUBS) === 4 && dm([C(KING), C(QUEEN), C(KING, 1)], SPADES) === 2, 'single marriages unchanged');
   check(dm([H(ACE), H(TEN), H(JACK), ...kq2(H)], HEARTS) === 45, 'run + double marriage 45');
   check(dm([H(ACE), H(TEN), H(JACK), H(ACE, 1), H(TEN, 1), H(JACK, 1), ...kq2(H)], HEARTS) === 150, 'double run is just 150');
   check(dm([...kq2(S), D(JACK)], HEARTS) === 34, 'double marriage ♠ + pinochle 34');
-  const r = meldOf([H(ACE), H(TEN), H(JACK), ...kq2(H)], HEARTS, true);
+  const r = meldOf([H(ACE), H(TEN), H(JACK), ...kq2(H)], HEARTS, { doubleMarriage: true });
   check(r.faces.length === 7, 'run + double marriage shows 7 cards');
   check(G.newGame().doubleMarriage === true && G.newGame({ doubleMarriage: false }).doubleMarriage === false, 'double marriage is the default');
+}
+// Roundhouse 24 beside a run (house rule, on by default).
+{
+  const rh = (hand, trump, roundhouse = true) => meldOf(hand, trump, { roundhouse }).total;
+  const house = [S(KING), S(QUEEN), C(KING), C(QUEEN), D(KING), D(QUEEN)];
+  const run = [H(ACE), H(TEN), H(KING), H(QUEEN), H(JACK)];
+  const hand = [...run, H(NINE), S(ACE), C(ACE), D(ACE), ...house];
+  check(rh(hand, HEARTS) === 50 && rh(hand, HEARTS, false) === 46, 'run + dix + aces + roundhouse: 50 (46 without the rule)');
+  check(rh([...run, ...house], HEARTS) === 15 + 24, 'run + roundhouse 39');
+  check(rh([...run, S(KING), S(QUEEN)], HEARTS) === 17, 'no roundhouse: the run keeps its K Q');
+  check(rh([...run, ...run.map((c) => c + 1000), ...house], HEARTS) === 150 + 20, 'double run + the rest of a roundhouse: 170');
+  check(G.newGame().roundhouse === true && G.newGame().buriedToLast === true, 'house rules on by default');
 }
 
 // The deal.
@@ -150,6 +162,15 @@ const same = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
   const r = g.result;
   check(r.made && r.score[0] === 12 + 1 + 1 + 2, 'made: meld + counters + last trick + buried: ' + JSON.stringify(r));
   check(r.score[1] === 0 && r.score[2] === 0, 'no counter taken: meld lost');
+}
+for (const buriedToLast of [true, false]) {
+  // The buried cards' points: to whoever takes the last trick (house rule), or the bidder.
+  const g = playing([[H(NINE)], [H(ACE)], [C(NINE)]], HEARTS, 0, 0, { highBid: 15, buriedToLast, buried: [S(TEN), S(KING), C(NINE)] });
+  g.melds = [{ total: 12, parts: [], faces: [] }, { total: 6, parts: [], faces: [] }, { total: 4, parts: [], faces: [] }];
+  G.apply(g, { type: 'card', card: H(NINE) }, 0); G.apply(g, { type: 'card', card: H(ACE) }, 1); G.apply(g, { type: 'card', card: C(NINE) }, 2);
+  const r = g.result;
+  if (buriedToLast) check(r.buriedTo === 1 && r.counters[1] === 1 + 1 + 2 && r.counters[0] === 0 && r.score[1] === 6 + 4 && r.score[0] === -15, 'buried to the last trick: ' + JSON.stringify(r));
+  else check(r.buriedTo === 0 && r.counters[0] === 2 && r.counters[1] === 2 && r.score[0] === -15 && r.score[1] === 6 + 2, 'buried to the bidder (12 + 2, short of 15): ' + JSON.stringify(r));
 }
 {
   // Set: lose the bid; an opponent with a counter scores meld + counters.

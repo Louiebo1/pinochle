@@ -9,14 +9,14 @@ import {
   SPADES, HEARTS, DIAMONDS, ACE, TEN, KING, QUEEN, JACK,
 } from './cards.js';
 import { STYLES } from './bot.js';
-import { newTableState, LocalHost, BOT_NAMES, PACE, trickLinger, widowReveal, shuffledList } from './table.js';
+import { newTableState, LocalHost, BOT_NAMES, PACE, trickLinger, widowReveal, shuffledList, rulesOf, RULES } from './table.js';
 import { OnlineTable, onlineAvailable } from './online.js';
 import { think } from './think.js';
 import { play as playSound, sound, unlockSound } from './sounds.js';
 
 const app = document.getElementById('app');
 // The page's options as it was opened (the address changes to ?t=CODE once at a table).
-// For checking the page: ?name=X, ?play, ?autoplay, ?fast, ?nokitty, ?nodouble, ?newtable=CODE&startafter=N.
+// For checking the page: ?name=X, ?play, ?autoplay, ?fast, ?nokitty, ?nohouse (house rules off), ?newtable=CODE&startafter=N.
 const params = new URLSearchParams(location.search);
 
 // MARK: Remembered on this device
@@ -28,7 +28,8 @@ function store(key, value) {
   try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
-const settings = Object.assign({ name: '', back: 'red', highFirst: true, largePrint: false, sounds: true, hints: false, kitty: true, doubleMarriage: true }, stored('pn.settings', {}));
+const settings = Object.assign({ name: '', back: 'red', highFirst: true, largePrint: false, sounds: true, hints: false, kitty: true, rules: {} }, stored('pn.settings', {}));
+settings.rules = rulesOf(settings.rules);
 function saveSettings() {
   store('pn.settings', settings);
   document.body.classList.toggle('large-print', settings.largePrint);
@@ -72,6 +73,7 @@ function button(text, cls, onclick) {
 
 const signed = (n) => (n >= 0 ? `+${n}` : String(n));
 const suitHTML = (s) => `<span class="suit${isRedSuit(s) ? ' red' : ''}">${SYMBOL[s]}</span>`;
+const cardText = (c) => `<b>${rankLabel(c)}</b>${suitHTML(suitOf(c))}`;
 
 function cardEl(c) {
   const red = isRedSuit(suitOf(c));
@@ -143,11 +145,44 @@ function twoWay(options, value, onChange, disabled = false) {
 /** With a kitty / No kitty. */
 const kittySwitch = (value, onChange, disabled) => twoWay([[true, 'With a Kitty'], [false, 'No Kitty']], value, onChange, disabled);
 const kittyNote = (kitty) => (kitty ? '15 cards each and 3 in the kitty' : '16 cards each, no kitty');
-/** Double marriage (both K Q of a suit) 30, or just two marriages. */
-const marriageSwitch = (value, onChange, disabled) => twoWay([[true, 'Double Marriage 30'], [false, 'Double Marriage 4/8']], value, onChange, disabled);
-const marriageNote = (dm) => (dm ? 'both K Q of a suit score 30, trump or not' : 'both K Q of a suit are just two marriages: 4, or 8 in trump');
-/** The meld in a hand, by the rule of the game being shown. */
-const meldIn = (hand, t) => meldOf(hand, t, state?.game?.doubleMarriage);
+/** The meld in a hand, by the house rules of the game being shown. */
+const meldIn = (hand, t) => meldOf(hand, t, state?.game || {});
+
+// MARK: House rules
+
+const rulesOff = () => Object.fromEntries(RULES.map((k) => [k, false]));
+
+/** Each house rule: key, title, then [switch label, summary, what it means] for on and off. */
+const HOUSE = [
+  ['doubleMarriage', 'Double marriage', ['30', 'Double marriage 30', 'Both K Q of a suit score 30, trump or not.'], ['4/8', 'Double marriage 4/8', 'Both K Q of a suit are just two marriages: 4, or 8 in trump.']],
+  ['roundhouse', 'Roundhouse with a run', ['24', 'Roundhouse 24', 'K and Q of every suit count their full 24 beside a run.'], ['20', 'Roundhouse 20 with a run', 'The run’s K Q isn’t a royal marriage too: 20 beside a run.']],
+  ['buriedToLast', 'Buried cards go to', ['Last Trick', 'Buried to the last trick', 'Whoever takes the last trick gets the buried cards’ points.'], ['Bidder', 'Buried to the bidder', 'The bidder always gets the buried cards’ points.']],
+];
+const houseSummary = (r) => HOUSE.map(([k, , on, off]) => (r[k] ? on : off)[1]).join(' · ');
+
+/** The House Rules button and a one-line summary: opens the switches (or just shows them,
+ *  if `onChange` is null). */
+function houseButton(rules, onChange) {
+  const box = el('div', 'house');
+  box.appendChild(button(onChange ? 'House Rules ›' : 'House Rules', 'link', () => showHouse(rules, onChange)));
+  box.appendChild(el('div', 'note', houseSummary(rules)));
+  return box;
+}
+function showHouse(rules, onChange) {
+  const r = { ...rules };
+  const body = el('div', 'house-rules');
+  const draw = () => {
+    body.innerHTML = '';
+    for (const [k, name, on, off] of HOUSE) {
+      body.appendChild(el('div', 'house-name', name));
+      body.appendChild(twoWay([[true, on[0]], [false, off[0]]], r[k], (v) => { r[k] = v; draw(); }, !onChange));
+      body.appendChild(el('div', 'note', (r[k] ? on : off)[2]));
+    }
+  };
+  draw();
+  if (onChange) popup('House Rules', body, [['Cancel', ''], ['Done', 'primary', () => onChange(r)]]);
+  else popup('House Rules', body, [['OK', 'primary']]);
+}
 
 // MARK: Start screen
 
@@ -225,7 +260,7 @@ function showLobby() {
   const saved = savedGame.get();
   if (saved) lobby.appendChild(button(`Continue Game · ${saved.game.scores.join('–')}`, 'big-button primary', () => playComputer(saved)));
   lobby.appendChild(kittySwitch(settings.kitty, (v) => { settings.kitty = v; saveSettings(); showLobby(); }));
-  lobby.appendChild(marriageSwitch(settings.doubleMarriage, (v) => { settings.doubleMarriage = v; saveSettings(); showLobby(); }));
+  lobby.appendChild(houseButton(settings.rules, (r) => { settings.rules = r; saveSettings(); showLobby(); }));
   lobby.appendChild(button(saved ? 'New Game vs the Computer' : 'Play the Computer', 'big-button', () => {
     if (saved) confirmThen('New Game?', 'The game you have going will be lost.', 'New Game', () => playComputer());
     else playComputer();
@@ -265,7 +300,7 @@ function playComputer(saved = null) {
     const names = shuffledList(BOT_NAMES.filter((n) => n !== settings.name));
     const seats = [{ kind: 'person', name: settings.name || 'You' }, ...[0, 1].map((i) => ({ kind: 'bot', name: names[i] }))];
     if (params.has('autoplay')) seats[0].kind = 'bot';     // Testing: bots in every seat.
-    s = newTableState(seats, params.has('nokitty') ? false : settings.kitty, params.has('nodouble') ? false : settings.doubleMarriage);
+    s = newTableState(seats, params.has('nokitty') ? false : settings.kitty, params.has('nohouse') ? rulesOff() : settings.rules);
   }
   ui.me = 0;
   resetUI();
@@ -285,7 +320,7 @@ function showFriends() {
   const lobby = el('div', 'lobby');
   lobby.appendChild(el('h1', '', 'Pinochle'));
   lobby.appendChild(el('div', 'tag', 'Play with friends'));
-  lobby.appendChild(button('Start a Table', 'big-button primary', () => withTable(OnlineTable.create(myName(), onTableUpdate, null, settings.kitty, settings.doubleMarriage))));
+  lobby.appendChild(button('Start a Table', 'big-button primary', () => withTable(OnlineTable.create(myName(), onTableUpdate, null, settings.kitty, settings.rules))));
   lobby.appendChild(el('div', 'note', 'or join with a code'));
   const row = el('div', 'row');
   const input = el('input', 'code');
@@ -374,13 +409,12 @@ function waitingRoom() {
   if (t.isHost) {
     lobby.appendChild(kittySwitch(t.kitty, (v) => t.setKitty(v)));
     lobby.appendChild(el('div', 'note', kittyNote(t.kitty)));
-    lobby.appendChild(marriageSwitch(t.doubleMarriage, (v) => t.setDoubleMarriage(v)));
-    lobby.appendChild(el('div', 'note', marriageNote(t.doubleMarriage)));
+    lobby.appendChild(houseButton(t.rules, (r) => t.setRules(r)));
     const open = t.seats.filter((s) => s.kind === 'open').length;
     lobby.appendChild(button(open ? `Start — bots take ${open} seat${open === 1 ? '' : 's'}` : 'Start the Game', 'big-button primary', () => t.start()));
   } else {
     lobby.appendChild(el('div', 'note', `${t.kitty ? 'With a kitty' : 'No kitty'}: ${kittyNote(t.kitty)}.`));
-    lobby.appendChild(el('div', 'note', `Double marriage ${t.doubleMarriage ? '30' : '4/8'}: ${marriageNote(t.doubleMarriage)}.`));
+    lobby.appendChild(houseButton(t.rules, null));
     const hostSeat = t.seats.find((s) => s.uid === t.meta?.hostUid);
     lobby.appendChild(el('div', 'note', `Waiting for ${hostSeat ? esc(hostSeat.name) : 'the host'} to start…`));
   }
@@ -563,7 +597,7 @@ function topBar(g) {
     const trump = g.trump !== null ? ` ${suitHTML(g.trump)}` : '';
     let detail = who(g.bidder);
     if (g.phase === 'playing' && g.melds) {
-      const have = g.melds[g.bidder].total + shownPoints(g, g.bidder) + (g.bidder === ui.me ? g.buried.filter(isCounter).length : 0);
+      const have = g.melds[g.bidder].total + shownPoints(g, g.bidder) + (g.bidder === ui.me && !g.buriedToLast ? g.buried.filter(isCounter).length : 0);
       detail += have >= g.highBid ? ' · made' : ` · needs ${g.highBid - have}`;
     }
     top.appendChild(el('div', `contract ${colorOf(g.bidder)}`, `<b>${g.highBid}${trump}</b><small>${detail}</small>`));
@@ -793,7 +827,7 @@ function meLine(g) {
     if (call) parts.push(`Your bid ${bidChip(call.amount)}`);
     else if (g.dealer === me) parts.push('You dealt — you bid last');
   } else if (g.phase === 'meld' || g.phase === 'playing') {
-    const buried = me === g.bidder && g.buried.length ? ` (+${g.buried.filter(isCounter).length} buried)` : '';
+    const buried = me === g.bidder && g.buried.length ? (g.buriedToLast ? ` (${g.buried.filter(isCounter).length} buried go to the last trick)` : ` (+${g.buried.filter(isCounter).length} buried)`) : '';
     parts.push(`${me === g.bidder ? `★ ${g.highBid} · ` : ''}meld ${g.melds[me].total}${g.phase === 'playing' ? ` · ${shownPoints(g, me)} pts${buried}` : ''}`);
   } else if ((g.phase === 'widow' || g.phase === 'trump') && me === g.bidder) parts.push(`★ ${g.highBid}`);
   return el('div', 'me-line' + (isMyTurn(g) ? ' turn' : ''), `<span class="pill">${parts.join('<span class="sep"></span>')}</span>`);
@@ -968,10 +1002,15 @@ function resultPanel(g) {
   const t = el('table', 'hand-table');
   t.appendChild(el('tr', '', '<th></th><th>Meld</th><th>Tricks</th><th>Hand</th>'));
   for (const s of [0, 1, 2].map(seatAt)) {
-    const note = r.conceded ? '' : s === r.bidder ? (g.buried.filter(isCounter).length ? `<small>incl. ${g.buried.filter(isCounter).length} buried</small>` : '') : !r.tookCounter[s] ? '<small>no counter</small>' : '';
+    const buried = g.buried.filter(isCounter).length, to = r.buriedTo ?? r.bidder;
+    const note = r.conceded ? '' : s === to && buried ? `<small>incl. ${buried} buried</small>` : s !== r.bidder && !r.tookCounter[s] ? '<small>no counter</small>' : '';
     t.appendChild(el('tr', s === r.bidder ? 'is-bidder' : '', `<td><i class="dot-color ${colorOf(s)}"></i>${who(s)}${s === r.bidder ? ' ★' : ''}</td><td>${r.meld[s]}</td><td>${r.conceded ? '–' : r.counters[s]}${note}</td><td><b>${signed(r.score[s])}</b></td>`));
   }
   body.appendChild(t);
+  if (!r.conceded && g.buried.length) {
+    const pts = g.buried.filter(isCounter).length;
+    body.appendChild(el('p', 'buried-line', `Buried: ${g.buried.map((c) => cardText(c)).join(' ')} — ${pts} point${pts === 1 ? '' : 's'} to ${who(r.buriedTo ?? r.bidder)}${g.buriedToLast ? ' (last trick)' : ''}`));
+  }
   body.appendChild(el('p', 'explain', explanation(g, r)));
   body.appendChild(scoreRow(g));
   const buttons = [button('Score Sheet', '', () => { ui.showSheet = true; render(); })];
@@ -1030,7 +1069,8 @@ function sheetPanel(g) {
   const close = () => { ui.showSheet = false; render(); };
   const body = el('div');
   body.appendChild(scoreRow(g));
-  body.appendChild(el('div', 'note', `First to ${G.TARGET} wins · ${g.kitty ? 'with a kitty' : 'no kitty'} · double marriage ${g.doubleMarriage ? 30 : '4/8'}`));
+  body.appendChild(el('div', 'note', `First to ${G.TARGET} wins · ${g.kitty ? 'with a kitty' : 'no kitty'} `));
+  body.appendChild(houseButton(rulesOf(g), null));
   const box = el('div', 'sheet-box');
   box.appendChild(scoreSheet(g));
   body.appendChild(box);
@@ -1062,15 +1102,15 @@ function showMenu() {
     ['How to Play', '', showRules],
     ['New Game', '', () => {
       const body = el('div');
-      let kitty = g.kitty, doubleMarriage = g.doubleMarriage ?? true;
+      let kitty = g.kitty, rules = rulesOf(g);
       const draw = () => {
         body.innerHTML = '';
         body.appendChild(el('p', '', online ? 'This starts the game over for everyone at the table.' : 'This game’s scores will be lost.'));
         body.appendChild(kittySwitch(kitty, (v) => { kitty = v; draw(); }));
-        body.appendChild(marriageSwitch(doubleMarriage, (v) => { doubleMarriage = v; draw(); }));
+        body.appendChild(houseButton(rules, (r) => { rules = r; draw(); }));
       };
       draw();
-      popup('New Game?', body, [['Cancel', ''], ['New Game', 'primary', () => { if (!online) { Object.assign(settings, { kitty, doubleMarriage }); saveSettings(); } host.send({ type: 'newGame', kitty, doubleMarriage }); }]]);
+      popup('New Game?', body, [['Cancel', ''], ['New Game', 'primary', () => { if (!online) { Object.assign(settings, { kitty, rules }); saveSettings(); } host.send({ type: 'newGame', kitty, rules }); }]]);
     }],
     ['Leave', '', () => {
       if (online && state.game.phase !== 'gameOver') confirmThen('Leave the Table?', 'The game waits for you (or the host lets a bot play). Come back with Back to Table on the start screen.', 'Leave', leaveTable);
@@ -1135,7 +1175,8 @@ function showRules() {
     <p><b>Three players, each for themselves.</b> 48 cards: two each of A 10 K Q J 9 in every suit. The 10 ranks just below the ace. <b>With a kitty</b>, 15 cards each and 3 face down; <b>no kitty</b>, 16 each.</p>
     <p><b>Bidding</b> starts left of the dealer: 15 or more, raising by 1. Once you pass you're out. When two have passed, the third has the bid. If all three pass, the next dealer deals.</p>
     <p><b>The kitty</b> is turned up for everyone. The bid winner takes it, buries any 3 (their counters count for the bidder; they can't be melded) and names trump. With no kitty, the bid winner just names trump.</p>
-    <p><b>Meld</b> — everyone shows theirs. Run (A 10 K Q J of trump) 15 · royal marriage (K Q of trump) 4 · marriage 2 · dix (9 of trump) 1 · pinochle (Q♠ J♦) 4 · aces around 10 · kings 8 · queens 6 · jacks 4. Doubles: run 150, pinochle 30, aces 100, kings 80, queens 60, jacks 40. <b>Double marriage 30</b> (the usual game): both K Q of a suit score 30, trump or not, even beside a run (a double run is just 150); with <b>double marriage 4/8</b> they're just two marriages. A card can count once in each kind of meld (a king in a marriage and in kings around).</p>
+    <p><b>Meld</b> — everyone shows theirs. Run (A 10 K Q J of trump) 15 · royal marriage (K Q of trump) 4 · marriage 2 · dix (9 of trump) 1 · pinochle (Q♠ J♦) 4 · aces around 10 · kings 8 · queens 6 · jacks 4. Doubles: run 150, pinochle 30, aces 100, kings 80, queens 60, jacks 40. A card can count once in each kind of meld (a king in a marriage and in kings around).</p>
+    <p><b>House rules</b> (all on unless you turn them off): <b>double marriage 30</b> — both K Q of a suit score 30, trump or not, even beside a run (a double run is just 150); <b>roundhouse 24</b> — K and Q of every suit count their full 24 beside a run; <b>buried cards to the last trick</b> — whoever takes the last trick gets the buried cards' points (otherwise the bidder does).</p>
     <p><b>Throwing in.</b> After the meld the bidder may throw the hand in: they lose the bid, and the others score their meld.</p>
     <p><b>Play.</b> The bidder leads. Follow suit, and beat the winning card if you can. Out of the suit, you must trump — over a trump already played if you can. Of two identical cards, the first played wins. A, 10 and K are worth 1 each, and the last trick 1: 25 in all.</p>
     <p><b>Scoring.</b> The bidder needs meld + counters to reach the bid: then they score them all, or else they lose the bid. The others score their meld + counters — but only if they took a counter. First to 150 wins; if two get there on the same hand, the bidder wins if they're one of them.</p>`);
@@ -1151,7 +1192,7 @@ if (params.get('name')) { settings.name = params.get('name').slice(0, 16); saveS
 if (params.has('fast')) Object.assign(PACE, { bot: 20, trickPause: 30, trickSweep: 20, widowCard: 10, widowHold: 20, meldHold: 40, resultHold: 30, autoNext: 60 });
 const tableCode = params.get('t') || params.get('newtable');
 if (tableCode && onlineAvailable()) {
-  const go = () => (params.get('newtable') ? withTable(OnlineTable.create(myName(), onTableUpdate, tableCode, !params.has('nokitty'), !params.has('nodouble'))) : joinTable(tableCode));
+  const go = () => (params.get('newtable') ? withTable(OnlineTable.create(myName(), onTableUpdate, tableCode, !params.has('nokitty'), params.has('nohouse') ? rulesOff() : {})) : joinTable(tableCode));
   // Someone opening a shared link for the first time: their name before their seat.
   if (settings.name) go(); else askName(go);
 } else if (params.has('play') || params.has('autoplay')) playComputer();

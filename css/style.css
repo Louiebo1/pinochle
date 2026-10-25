@@ -307,3 +307,12 @@ table.stats td:first-child { text-align: left; opacity: 0.85; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* House rules: the button and summary under the kitty switch, and its dialog. */
+.house { text-align: center; }
+.house .note { margin-top: 2px; }
+.house-rules { text-align: center; display: flex; flex-direction: column; align-items: center; }
+.house-rules .house-name { font-weight: 700; margin-top: 16px; }
+.house-rules .house-name:first-child { margin-top: 0; }
+.house-rules .switch { margin: 6px 0 4px; }
+.result .buried-line { text-align: center; margin: 8px 0 0; }

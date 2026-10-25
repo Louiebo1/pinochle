@@ -48,10 +48,14 @@ const AROUND = [[ACE, 'Aces', 10], [KING, 'Kings', 8], [QUEEN, 'Queens', 6], [JA
 /** The meld in `hand` with `trump`: { total, parts: [{ name, points, faces }], faces }.
  *  A card may count once in each kind of meld (runs, marriages and the dix; pinochles;
  *  "around"), so a king can be in a marriage and in kings around. `faces` is every card
- *  shown, as faces, each as many times as it's needed. With `doubleMarriage` (the default
- *  game; Louie, 2026-10-25), both K Q of a suit score 30, trump or not, and count even
- *  when a run uses a K Q of them — but a double run is just 150. */
-export function meldOf(hand, trump, doubleMarriage = false) {
+ *  shown, as faces, each as many times as it's needed. House rules (both on in a new game;
+ *  Louie, 2026-10-25), from `rules` (the game):
+ *  - `doubleMarriage`: both K Q of a suit score 30, trump or not, and count even when a
+ *    run uses a K Q of them — but a double run is just 150.
+ *  - `roundhouse`: with a K and Q of every suit, the run's K Q is a royal marriage too, so
+ *    kings and queens around come to their full 24 beside a run (not beside a double run). */
+export function meldOf(hand, trump, rules = {}) {
+  const { doubleMarriage = false, roundhouse = false } = rules;
   const count = {};
   for (const c of hand) count[face(c)] = (count[face(c)] || 0) + 1;
   const n = (suit, rank) => count[suit * 100 + rank] || 0;
@@ -62,6 +66,7 @@ export function meldOf(hand, trump, doubleMarriage = false) {
   // Runs, marriages and the dix.
   const runFaces = [ACE, TEN, KING, QUEEN, JACK].map((r) => trump * 100 + r);
   const runs = Math.min(...runFaces.map((f) => count[f] || 0));
+  const roundhouseHeld = roundhouse && SUITS.every((s) => n(s, KING) && n(s, QUEEN));
   if (runs === 2) add('Double run', 150, times(runFaces, 2));
   else if (runs === 1) add('Run', 15, runFaces);
   for (const s of SUITS) {
@@ -69,7 +74,7 @@ export function meldOf(hand, trump, doubleMarriage = false) {
       add(`Double marriage ${SYMBOL[s]}`, 30, times([s * 100 + KING, s * 100 + QUEEN], 2));
       continue;
     }
-    const k = Math.min(n(s, KING), n(s, QUEEN)) - (s === trump ? runs : 0);
+    const k = Math.min(n(s, KING), n(s, QUEEN)) - (s === trump && !(runs === 1 && roundhouseHeld) ? runs : 0);
     if (k <= 0) continue;
     const royal = s === trump;
     const each = royal ? 4 : 2;
