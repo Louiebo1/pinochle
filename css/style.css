@@ -227,6 +227,12 @@ input:focus { outline: 2px solid var(--gold); }
 .handrow .card.meld { transform: translateY(calc(var(--cw) * -0.32)); }
 .handrow .card.bury-pick { box-shadow: 0 0 0 3px var(--gold), 0 0 12px var(--gold); }
 .handrow .card.meld.bury-pick { box-shadow: 0 0 0 3px #ff6b5b, 0 0 12px #ff6b5b; }
+/* …and a stipple of dots over the face: marked for burying, still readable. */
+.handrow .card.bury-pick::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background-image: radial-gradient(rgba(0, 0, 0, 0.42) 1.1px, transparent 1.5px), radial-gradient(rgba(0, 0, 0, 0.42) 1.1px, transparent 1.5px);
+  background-size: 6px 6px; background-position: 0 0, 3px 3px;
+}
 .bury .meld-loss { color: #ffb0a6; font-weight: 700; text-align: center; }
 .bury .meld-key { font-size: 14px; opacity: 0.85; text-align: center; }
 .card.hinted { box-shadow: 0 0 0 3px var(--gold), 0 1px 3px #0007; }
