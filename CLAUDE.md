@@ -19,8 +19,8 @@ pagat.com's three-player points game with every score divided by 10:
   Doubles get the big bonuses: run 150, pinochle 30, aces 100, kings 80, queens 60,
   jacks 40 (Louie). Roundhouse comes out at 24 naturally.
 - Double marriage 30 (setting, on by default; Louie 2026-10-25): both K Q of a suit score
-  30, trump or not, and count beside a run (run + double marriage 45; double run + double
-  marriage 180). Off: two marriages, 4 or 8. `g.doubleMarriage` (old saves: off), online
+  30, trump or not, and count beside a run (run + double marriage 45), but a double run is
+  just 150. Off: two marriages, 4 or 8. `g.doubleMarriage` (old saves: off), online
   `meta.doubleMarriage`, `?nodouble`; `meldOf(hand, trump, doubleMarriage)`.
 - Bidder may throw in after the meld: −bid, others score their meld.
 - Play: follow suit and ALWAYS beat the winning card if you can ("always kill" — Louie);

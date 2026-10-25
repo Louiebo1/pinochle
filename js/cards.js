@@ -50,7 +50,7 @@ const AROUND = [[ACE, 'Aces', 10], [KING, 'Kings', 8], [QUEEN, 'Queens', 6], [JA
  *  "around"), so a king can be in a marriage and in kings around. `faces` is every card
  *  shown, as faces, each as many times as it's needed. With `doubleMarriage` (the default
  *  game; Louie, 2026-10-25), both K Q of a suit score 30, trump or not, and count even
- *  when a run uses a K Q of them. */
+ *  when a run uses a K Q of them — but a double run is just 150. */
 export function meldOf(hand, trump, doubleMarriage = false) {
   const count = {};
   for (const c of hand) count[face(c)] = (count[face(c)] || 0) + 1;
@@ -65,7 +65,7 @@ export function meldOf(hand, trump, doubleMarriage = false) {
   if (runs === 2) add('Double run', 150, times(runFaces, 2));
   else if (runs === 1) add('Run', 15, runFaces);
   for (const s of SUITS) {
-    if (doubleMarriage && Math.min(n(s, KING), n(s, QUEEN)) === 2) {
+    if (doubleMarriage && Math.min(n(s, KING), n(s, QUEEN)) === 2 && !(s === trump && runs === 2)) {
       add(`Double marriage ${SYMBOL[s]}`, 30, times([s * 100 + KING, s * 100 + QUEEN], 2));
       continue;
     }
