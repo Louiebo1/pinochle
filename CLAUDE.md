@@ -74,6 +74,10 @@ pagat.com's three-player points game with every score divided by 10:
 - `js/main.js` — lobby (kitty switch), friends, waiting room, table (two players top left
   and right, trick in the middle, the kitty turned up, everyone's meld board, bid stepper
   with your meld per suit, bury with trump buttons showing the meld, Play It / Throw In),
+  [burying (Louie 2026-10-25): meld cards for the picked trump sit raised (`meldCardsOf`:
+  each face as often as the meld needs it, unpicked copies first); picked cards glow gold in
+  place with a dot stipple, red if meld, plus a "drops your meld from X to Y" line; no kitty
+  marks; the hand is never reordered by trump],
   result (meld · tricks · hand per player, and why), score sheet, final with styles, menu
   (Everyone's Meld), settings, stats, rules. localStorage `pn.settings`, `pn.stats`,
   `pn.local`, `pn.table`. Names through `esc()`.
