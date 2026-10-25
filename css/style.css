@@ -222,7 +222,6 @@ input:focus { outline: 2px solid var(--gold); }
 .handrow .card.playable { transform: translateY(calc(var(--cw) * -0.1)); }
 .handrow .card.picked { transform: translateY(calc(var(--cw) * -0.32)); box-shadow: 0 0 0 3px var(--gold), 0 0 10px var(--gold); }
 .handrow .card.dim { filter: brightness(0.62) saturate(0.7); }
-.handrow .card.from-kitty::after { content: ''; position: absolute; left: 20%; right: 20%; top: -6px; height: 4px; border-radius: 2px; background: var(--gold); }
 /* Burying: meld cards for the trump picked sit raised; cards picked to bury glow gold in
    place (red if they're meld). */
 .handrow .card.meld { transform: translateY(calc(var(--cw) * -0.32)); }

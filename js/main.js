@@ -859,8 +859,9 @@ function meLine(g) {
   return el('div', 'me-line' + (isMyTurn(g) ? ' turn' : ''), `<span class="pill">${parts.join('<span class="sep"></span>')}</span>`);
 }
 
-/** My hand in order: suits alternate black and red; once trump is named it sits on the
- *  right (when the colors still alternate). A 10 sits between the A and the K. */
+/** Cards in order: suits alternate black and red; with `trump`, it sits on the right (my
+ *  hand passes none: it's never reordered by trump — Louie, 2026-10-25). A 10 sits between
+ *  the A and the K. */
 export function defaultOrder(hand, trump, highFirst = true) {
   const groups = SUITS.filter((s) => hand.some((c) => suitOf(c) === s));
   const permutations = (list) => (list.length <= 1 ? [list] : list.flatMap((first) => permutations(list.filter((x) => x !== first)).map((rest) => [first, ...rest])));
@@ -890,10 +891,9 @@ function handRow(g, revealing) {
   const me = ui.me;
   const row = el('div', 'handrow');
   const burying = isMyTurn(g) && g.phase === 'widow' && !revealing;
-  const fromWidow = new Set(burying ? g.widow : []);
   const trumpShown = g.trump ?? (burying ? buryTrump(g) : null);
   const melders = burying ? meldCards(handCards(g), trumpShown) : new Set();
-  const hand = defaultOrder(handCards(g), trumpShown, settings.highFirst);
+  const hand = defaultOrder(handCards(g), null, settings.highFirst);   // Never reordered by trump (Louie).
   const legal = new Set(G.legalPlays(g, me));
   const myTurn = isMyTurn(g) && g.phase === 'playing';
   // Overlap the cards just enough to fit the screen.
@@ -907,7 +907,6 @@ function handRow(g, revealing) {
     if (burying) e.classList.add('choosable');
     if (burying && ui.selected.has(c)) e.classList.add('bury-pick');
     if (melders.has(c)) e.classList.add('meld');
-    if (fromWidow.has(c)) e.classList.add('from-kitty');
     if (myTurn && c === ui.pending) e.classList.add('picked');
     else if (myTurn && legal.has(c)) e.classList.add('playable');
     else if (myTurn) e.classList.add('dim');
