@@ -11,4 +11,5 @@ var = t['diffSq'] / n - mean * mean
 se = math.sqrt(var / n)
 print(f"{n} deals, {t['hands']} hands: new {t['newScore']/t['hands']:.2f} vs old {t['oldScore']/t['hands']:.2f} a hand; "
       f"edge {mean/3:+.2f} ±{2*se/3:.2f} a hand; new bids {t['newBids']} made {t['newMade']/max(1,t['newBids']):.0%}, "
-      f"old bids {t['oldBids']} made {t['oldMade']/max(1,t['oldBids']):.0%}; thrown in {t['thrown']}; {t['ms']/1000/ (t['hands'] or 1):.2f} s a hand-cpu")
+      f"old bids {t['oldBids']} made {t['oldMade']/max(1,t['oldBids']):.0%}; thrown in {t['thrown']}; "
+      f"points fed to the bidder: new {t.get('newFeeds',0)}, old {t.get('oldFeeds',0)} (old has 2 seats); {t['ms']/1000/ (t['hands'] or 1):.2f} s a hand-cpu")

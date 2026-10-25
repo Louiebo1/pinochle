@@ -153,6 +153,10 @@ export class Bot {
     if (choices.length === 1) return choices[0];
     if (TUNE.randomPlay) return choices[below(choices.length, this.random)];
     if (TUNE.quickPlay) return quickCard(g, seat);
+    // Can't win the trick: the firm rules decide (points to a partner who's safely winning,
+    // otherwise the cheapest card — never a counter the rules don't force).
+    const losing = losingPlay(g, seat, legal, this.random);
+    if (losing !== null) return losing;
     const totals = choices.map(() => 0);
     for (let i = 0, n = TUNE.playSamples || PLAY_SAMPLES; i < n; i++) {
       const world = sample(g, seat, this.random);
@@ -178,17 +182,33 @@ function distinctFaces(cards) {
   return out;
 }
 
-/** How a hand came out for `seat`: the bidder wants their score; the others want their own
- *  score over the bidder's. */
+/** How a hand came out for `seat`: the bidder wants their score over the other two's; the
+ *  other two play as partners (their scores together over the bidder's) — unless either of
+ *  them could go out this hand, when each plays for themselves (Louie, 2026-10-24). */
 function utility(g, seat) {
   const r = g.result;
   if (!r) return 0;
-  if (seat === r.bidder) {
-    // The bidder also minds what the other two score.
-    const others = [0, 1, 2].filter((s) => s !== seat);
-    return r.score[seat] - (TUNE.relative ?? 1) * (r.score[others[0]] + r.score[others[1]]) / 2;
-  }
-  return r.score[seat] - r.score[r.bidder];
+  const others = [0, 1, 2].filter((s) => s !== seat);
+  if (seat === r.bidder) return r.score[seat] - (TUNE.relative ?? 1) * (r.score[others[0]] + r.score[others[1]]) / 2;
+  const partner = others.find((s) => s !== r.bidder);
+  if (!teamed(g, seat)) return r.score[seat] - (r.score[r.bidder] + r.score[partner]) / 2;
+  return r.score[seat] + r.score[partner] - 2 * r.score[r.bidder];
+}
+
+/** The other player against the bidder. */
+export const partnerOf = (g, seat) => [0, 1, 2].find((s) => s !== seat && s !== g.bidder);
+
+/** Could this player reach 150 this hand: their score before it, their meld and all 25 in play? */
+export function canGoOut(g, seat) {
+  const before = g.scores[seat] - (g.result ? g.result.score[seat] : 0);
+  const meld = g.melds ? g.melds[seat].total : 0;
+  return before + meld + 25 >= G.TARGET;
+}
+
+/** The two against the bidder play as partners — unless either could go out. */
+export function teamed(g, seat) {
+  if (g.bidder === null || seat === g.bidder) return false;
+  return !canGoOut(g, seat) && !canGoOut(g, partnerOf(g, seat));
 }
 
 /** A hand in play for the look-ahead: `seat` won the bid at `bid` and named `trump`. */
@@ -380,11 +400,57 @@ function isBoss(g, c, hand) {
   return higher.every((x) => gone.has(x));
 }
 
+/** What a losing card costs to give up: a counter most (unless the rules force one), then
+ *  a trump, then by rank — 9, J, Q, K, 10, A. */
+const throwCost = (c, trump) => (isCounter(c) ? 20 : 0) + (suitOf(c) === trump ? 10 : 0) + power(c);
+const cheapest = (list, trump) => list.reduce((a, b) => (throwCost(b, trump) < throwCost(a, trump) ? b : a));
+
+/** My partner is winning this trick and the bidder can't take it: the bidder has played
+ *  already, or the partner's card is the best left in its suit and the bidder can't trump
+ *  it (they can still have the suit, or they're out of trumps too — what the table has seen). */
+export function partnerSafe(g, seat, win) {
+  if (g.trick.length === PLAYERS_MINUS_ONE) return true;
+  if (!isBoss(g, win.card, g.hands[seat])) return false;
+  if (suitOf(win.card) === g.trump) return true;
+  const led = suitOf(g.trick[0].card), out = g.voids[g.bidder];
+  // Out of the suit: they've shown it, or every card of it is played or in my hand.
+  const seen = new Set(g.played.map((p) => p.card).concat(g.hands[seat], g.trick.map((p) => p.card)));
+  const bidderOut = out.includes(led) || FULL_DECK.every((c) => suitOf(c) !== led || seen.has(c));
+  return !bidderOut || out.includes(g.trump);
+}
+
+/** When I can't win the trick: points (K, then 10, then A) to a partner who's safely
+ *  winning, else my cheapest card. null when I can win it (the look-ahead decides). */
+export function losingPlay(g, seat, legal, random = null) {
+  if (!g.trick.length) return null;
+  const trump = g.trump, win = G.winningPlay(g.trick, trump);
+  const beats = (c) => (suitOf(c) === suitOf(win.card) ? power(c) > power(win.card) : suitOf(c) === trump);
+  if (legal.some(beats)) return null;
+  if (teamed(g, seat) && win.seat === partnerOf(g, seat) && partnerSafe(g, seat, win)
+    && !(random && g.trick.length === 1 && bidderLikelyTrumps(g, seat, random))) {
+    const counters = legal.filter(isCounter);
+    if (counters.length) return counters.reduce((a, b) => ((suitOf(b) === trump ? 10 : 0) + power(b) < (suitOf(a) === trump ? 10 : 0) + power(a) ? b : a));
+  }
+  return cheapest(legal, trump);
+}
+
+/** The bidder (still to play) hasn't shown out of the suit led, but may be out of it: in
+ *  the imagined deals, how often can they trump it? More than 1 in 4: keep the points. */
+function bidderLikelyTrumps(g, seat, random) {
+  const led = suitOf(g.trick[0].card);
+  let trumps = 0;
+  const n = 40;
+  for (let i = 0; i < n; i++) {
+    const hand = sample(g, seat, random).hands[g.bidder];
+    if (!hand.some((c) => suitOf(c) === led) && hand.some((c) => suitOf(c) === g.trump)) trumps++;
+  }
+  return trumps > n / 4;
+}
+
 export function quickCard(g, seat) {
   const legal = G.legalPlays(g, seat);
   if (legal.length === 1) return legal[0];
   const hand = g.hands[seat], trump = g.trump;
-  const friend = (o) => o !== seat && seat !== g.bidder && o !== g.bidder;
   const lowest = (list) => list.reduce((a, b) => (low(b) < low(a) ? b : a));
   const low = (c) => (isCounter(c) ? 10 : 0) + power(c) + (suitOf(c) === trump ? 20 : 0);
   if (!g.trick.length) {
@@ -394,26 +460,27 @@ export function quickCard(g, seat) {
     if (seat === g.bidder) {
       const trumpBoss = bosses.filter((c) => suitOf(c) === trump);
       if (trumpBoss.length && hand.filter((c) => suitOf(c) === trump).length >= 3) return trumpBoss[0];
+    } else if (teamed(g, seat)) {
+      // Lead into my partner: a suit they're out of (and still have trumps for) while the
+      // bidder has to follow it.
+      const p = partnerOf(g, seat), pv = g.voids[p], bv = g.voids[g.bidder];
+      const into = legal.filter((c) => suitOf(c) !== trump && !isCounter(c) && pv.includes(suitOf(c)) && !pv.includes(trump) && !bv.includes(suitOf(c)));
+      if (into.length) return lowest(into);
     }
     const off = legal.filter((c) => suitOf(c) !== trump && !isCounter(c));
     return lowest(off.length ? off : legal);
   }
-  const win = G.winningPlay(g.trick, trump);
+  const losing = losingPlay(g, seat, legal);
+  if (losing !== null) return losing;
   const last = g.trick.length === PLAYERS_MINUS_ONE;
-  const beating = legal.filter((c) => (suitOf(c) === suitOf(win.card) ? power(c) > power(win.card) : suitOf(c) === trump));
-  if (beating.length) {
-    const nextSeat = (seat + 1) % 3;
-    // Last, or the one after me is on my side: take it with the most points.
-    if (last || friend(nextSeat)) return beating.reduce((a, b) => ((isCounter(b) ? 1 : 0) - power(b) / 10 > (isCounter(a) ? 1 : 0) - power(a) / 10 ? b : a));
-    const sure = beating.filter((c) => isBoss(g, c, hand));
-    if (sure.length) return sure.reduce((a, b) => (isCounter(b) && !isCounter(a) ? b : a));
-    return lowest(beating);
+  const beating = legal;          // The rules make every legal card beat it.
+  const nextSeat = (seat + 1) % 3;
+  // Last, or my partner plays after me: take it with the most points.
+  if (last || (teamed(g, seat) && nextSeat === partnerOf(g, seat))) {
+    return beating.reduce((a, b) => ((isCounter(b) ? 1 : 0) - power(b) / 10 > (isCounter(a) ? 1 : 0) - power(a) / 10 ? b : a));
   }
-  // Can't win it: give points to a friend who's winning, else throw the least.
-  if (friend(win.seat)) {
-    const counters = legal.filter(isCounter);
-    if (counters.length) return counters.reduce((a, b) => (power(b) < power(a) ? b : a));
-  }
-  return lowest(legal);
+  const sure = beating.filter((c) => isBoss(g, c, hand));
+  if (sure.length) return sure.reduce((a, b) => (isCounter(b) && !isCounter(a) ? b : a));
+  return lowest(beating);
 }
 const PLAYERS_MINUS_ONE = G.PLAYERS - 1;

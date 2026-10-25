@@ -39,7 +39,18 @@ pagat.com's three-player points game with every score divided by 10:
   rollouts (`quickCard`); the bidder minds the others' scores too; throw in when it beats
   playing. Sampling respects shown meld, the turned-up kitty, voids, and what "always
   kill" gives away (`ceilings`: someone who followed or trumped low holds nothing higher).
-  `TUNE` holds knobs for tests/bench.js only. Styles (secret, revealed at the end):
+  `TUNE` holds knobs for tests/bench.js only.
+  Against the bidder (Louie, 2026-10-24): the two non-bidders are partners (utility: both
+  their scores over the bidder's) unless either could go out (score + meld + 25 ≥ 150), then
+  each plays for themselves. Firm rules when a bot can't win the trick (`losingPlay`):
+  points (K, then 10, then A) onto a partner's trick only if the bidder has played, or the
+  partner's card is the best left and the bidder can't trump it (hasn't shown out of the
+  suit — or every card of it is accounted for — or is out of trumps too) and the imagined
+  deals give the bidder < 1 in 4 of trumping it; otherwise the cheapest card (9 J Q K 10 A,
+  never a counter the rules don't force). Non-bidders lead into a partner who's out of a
+  suit the bidder must follow. bench.js counts "points fed to the bidder" (a counter thrown
+  on a trick the bot couldn't win, with a non-counter allowed): new 22 vs old 142 a seat in
+  840 hands. Styles (secret, revealed at the end):
   Steady, Cautious, Aggressive, Gambler. A stand-in for a dropped person plays Steady.
 - `js/think.js` + `js/worker.js` — bots think in a module Web Worker; `?noworker` forces the page.
 - `js/table.js` — table state, `applyMove`, `nextHostStep` + `Pacer` (bot 0.75 s, trick

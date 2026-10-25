@@ -2,7 +2,7 @@
 //   /System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc -m tests/engine.test.js
 import * as G from '../js/game.js';
 import { card, SPADES, HEARTS, CLUBS, DIAMONDS, ACE, TEN, KING, QUEEN, JACK, NINE, FULL_DECK, meldOf, isCounter } from '../js/cards.js';
-import { Bot } from '../js/bot.js';
+import { Bot, losingPlay } from '../js/bot.js';
 import { newTableState, applyMove } from '../js/table.js';
 
 let checks = 0, failures = 0;
@@ -170,6 +170,44 @@ const same = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
   check(g.phase === 'handOver' && g.continueDeadline > 0, 'waits for seat 2');
   G.markContinued(g, 2);
   check(g.phase === 'bidding' && g.handNumber === 1 && g.dealer === 1, 'next hand, deal passes left');
+}
+
+// The bots against the bidder (Louie, 2026-10-24): seat 2 bid; 0 and 1 are partners.
+{
+  const meld0 = { total: 0, parts: [], faces: [] };
+  const hand = (cards) => cards;
+  const at = (hands, plays, extra = {}) => {
+    const g = playing(hands, HEARTS, 2, 0, extra);
+    g.melds = [meld0, meld0, meld0];
+    for (const [seat, c] of plays) G.apply(g, { type: 'card', card: c }, seat);
+    return g;
+  };
+  const pick = (g, seat) => losingPlay(g, seat, G.legalPlays(g, seat));
+  // Partner leads the best spade left; the bidder still has spades: points go on it, the K first.
+  let g = at([[S(ACE), C(NINE)], hand([S(KING), S(TEN), S(NINE), C(TEN)]), [S(NINE, 1), H(ACE), C(KING), D(NINE)]], [[0, S(ACE)]]);
+  check(pick(g, 1) === S(KING), 'points to a partner safely winning: the K, not the 10 or the 9');
+  // Same, but the bidder has shown out of spades (and still has trumps): keep the points.
+  g = at([[S(ACE), C(NINE)], hand([S(KING), S(TEN), S(NINE), C(TEN)]), [H(ACE), C(KING), D(NINE), D(TEN)]], [[0, S(ACE)]]);
+  g.voids[2] = [SPADES];
+  check(pick(g, 1) === S(NINE), 'the bidder can trump it: the cheapest card');
+  // The partner's card isn't the best left (the other ace is out): keep the points.
+  g = at([[S(TEN), C(NINE)], hand([S(KING), S(NINE), C(TEN), C(NINE, 1)]), [S(NINE, 1), H(ACE), C(KING), D(NINE)]], [[0, S(TEN)]]);
+  check(pick(g, 1) === S(NINE), 'partner not safe: the cheapest card');
+  // The bidder is winning and I'm last: never a counter the rules don't force; the K before the A.
+  for (const [mine, want, what] of [[[S(KING), S(ACE), S(NINE)], S(NINE), 'bidder winning: the 9, not a counter'],
+    [[S(KING), S(ACE)], S(KING), 'forced to give a counter: the K, not the A']]) {
+    g = playing([mine, [H(TEN), C(NINE)], [H(NINE), D(NINE)]], HEARTS, 1, 1);
+    g.melds = [meld0, meld0, meld0];
+    G.apply(g, { type: 'card', card: H(TEN) }, 1);
+    G.apply(g, { type: 'card', card: H(NINE) }, 2);
+    check(pick(g, 0) === want, what);
+  }
+  // My partner could go out: no help — the cheapest card.
+  g = at([[S(ACE), C(NINE)], hand([S(KING), S(TEN), S(NINE), C(TEN)]), [S(NINE, 1), H(ACE), C(KING), D(NINE)]], [[0, S(ACE)]], { scores: [130, 0, 0] });
+  check(pick(g, 1) === S(NINE), 'partner could go out: play for myself');
+  // I could go out myself: play for myself.
+  g = at([[S(ACE), C(NINE)], hand([S(KING), S(TEN), S(NINE), C(TEN)]), [S(NINE, 1), H(ACE), C(KING), D(NINE)]], [[0, S(ACE)]], { scores: [0, 130, 0] });
+  check(pick(g, 1) === S(NINE), 'I could go out: play for myself');
 }
 
 // The bots: whole games through the table code, with and without the kitty.
