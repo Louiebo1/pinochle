@@ -843,7 +843,7 @@ function buryTrump(g) {
   return ui.trumpPick;
 }
 
-const meldCards = (pool, t) => meldCardsOf(pool, t, state?.game || {});
+const meldCards = (pool, t) => meldCardsOf(pool, t, state?.game || {}, ui.selected);
 
 function meLine(g) {
   const me = ui.me;

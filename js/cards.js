@@ -41,10 +41,16 @@ export function shuffled(deck = FULL_DECK, random = Math.random) {
   return d;
 }
 
-/** The cards in `pool` that meld with `trump`: burying any one of them alone loses meld. */
-export function meldCardsOf(pool, trump, rules = {}) {
-  const full = meldOf(pool, trump, rules).total;
-  return new Set(pool.filter((c) => meldOf(pool.filter((x) => x !== c), trump, rules).total < full));
+/** The cards in `pool` that make its meld with `trump`: each face as many times as the meld
+ *  needs it (two K♦ but one Q♦: one K♦). Copies not in `picked` go first, so burying one
+ *  copy of a doubled card raises the other instead. */
+export function meldCardsOf(pool, trump, rules = {}, picked = new Set()) {
+  const need = {};
+  for (const f of meldOf(pool, trump, rules).faces) need[f] = (need[f] || 0) + 1;
+  const ordered = pool.filter((c) => !picked.has(c)).concat(pool.filter((c) => picked.has(c)));
+  const out = new Set();
+  for (const c of ordered) if (need[face(c)] > 0) { need[face(c)] -= 1; out.add(c); }
+  return out;
 }
 
 // MARK: Meld (the scores divided by 10; doubles score the big bonuses — Louie, 2026-10-24)

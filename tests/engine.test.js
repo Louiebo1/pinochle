@@ -58,6 +58,10 @@ check(m([S(QUEEN), D(JACK), S(KING)], HEARTS) === 6, 'Q♠ in pinochle and marri
   check(same([...mc], [H(KING), H(QUEEN), S(QUEEN), D(JACK)]), 'meld cards: royal marriage and pinochle, not the plain cards');
   check(meldCardsOf(pool, CLUBS).size === 6 && meldCardsOf(pool, CLUBS).has(C(NINE)) && !mc.has(C(NINE)), 'the 9s meld only as the dix in trump');
   check(meldCardsOf([C(NINE), C(NINE, 1)], CLUBS).size === 2, 'both dix meld');
+  const kk = [D(KING), D(KING, 1), D(QUEEN)];
+  check(same([...meldCardsOf(kk, DIAMONDS)], [D(KING), D(QUEEN)]), 'two K♦, one Q♦: one K♦ raised');
+  check(same([...meldCardsOf(kk, DIAMONDS, {}, new Set([D(KING)]))], [D(KING, 1), D(QUEEN)]), 'burying that K♦ raises the other');
+  check(same([...meldCardsOf(kk, DIAMONDS, {}, new Set([D(KING), D(KING, 1)]))], [D(KING), D(QUEEN)]), 'burying both: one is meld lost');
 }
 // Roundhouse 24 beside a run (house rule, on by default).
 {
