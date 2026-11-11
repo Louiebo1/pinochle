@@ -82,6 +82,9 @@ pagat.com's three-player points game with every score divided by 10:
   (Everyone's Meld), settings, stats, rules. localStorage `pn.settings`, `pn.stats`,
   `pn.local`, `pn.table`. Names through `esc()`.
 - `img/icon.png` — rendered from the page's own card CSS (Q♠ J♦) in headless Chrome.
+- `js/handdrag.js` — drag a card sideways in your hand to move it (as the 500/Pinochle apps);
+  the order lasts for the hand. Same file in every web game; master copy
+  `~/code/cardgames-home/shared/handdrag.js`.
 
 ## Test
 - Rules + 2 whole bot games (kitty, no kitty):

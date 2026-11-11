@@ -14,6 +14,7 @@ import { OnlineTable, onlineAvailable } from './online.js';
 import { syncGame, pushName, pushStats, accountPanel, accountLobby, statsNote, account } from './account.js';
 import { think } from './think.js';
 import { play as playSound, sound, unlockSound } from './sounds.js';
+import { HandOrder, makeDraggable, deferWhileDragging } from './handdrag.js';
 
 const app = document.getElementById('app');
 // The page's options as it was opened (the address changes to ?t=CODE once at a table).
@@ -220,6 +221,7 @@ function resetUI() {
     sentAt: null, prev: null, recorded: false, showSheet: false, showFinal: false, overlayKey: null,
   });
   ui.selected.clear();
+  handOrder.arrange([], null);
   later.splice(0).forEach(clearTimeout);
 }
 
@@ -531,8 +533,10 @@ function sizes(n = 15) {
   };
 }
 
+const handOrder = new HandOrder();     // Where I've dragged cards in my hand this hand.
+
 function render() {
-  if (!state) return;
+  if (!state || deferWhileDragging(render)) return;
   const g = state.game, me = ui.me, now = Date.now();
   if (ui.pending !== null && !G.legalPlays(g, me).includes(ui.pending)) ui.pending = null;
   const size = sizes(handCards(g).length);
@@ -896,7 +900,7 @@ function handRow(g, revealing) {
   const burying = isMyTurn(g) && g.phase === 'widow' && !revealing;
   const trumpShown = g.trump ?? (burying ? buryTrump(g) : null);
   const melders = burying ? meldCards(handCards(g), trumpShown) : new Set();
-  const hand = defaultOrder(handCards(g), null, settings.highFirst);   // Never reordered by trump (Louie).
+  const hand = handOrder.arrange(defaultOrder(handCards(g), null, settings.highFirst), `${g.handNumber}:${g.redeals}`);   // Never reordered by trump (Louie).
   const legal = new Set(G.legalPlays(g, me));
   const myTurn = isMyTurn(g) && g.phase === 'playing';
   // Overlap the cards just enough to fit the screen.
@@ -917,6 +921,7 @@ function handRow(g, revealing) {
     e.onclick = () => tapCard(c);
     row.appendChild(e);
   }
+  makeDraggable(hand, [...row.children], (c, to) => { handOrder.move(hand, c, to); render(); });
   return row;
 }
 
